@@ -4,11 +4,21 @@
     "name": "hermannbjorgvin",
     "url": "https://github.com/hermannbjorgvin"
   },
+  "description": "Personal Claude Code plugins: tv-pauser and orchestra",
   "plugins": [
     {
       "name": "tv-pauser",
       "source": "./tv-pauser",
       "description": "Pause your media player when Claude needs attention, resume when working",
+      "version": "1.0.0",
+      "author": {
+        "name": "hermannbjorgvin"
+      }
+    },
+    {
+      "name": "orchestra",
+      "source": "./orchestra",
+      "description": "Run parallel coding agents (players) in tmux sessions and git worktrees, supervised by an orchestrator that receives their reports",
       "version": "1.0.0",
       "author": {
         "name": "hermannbjorgvin"
