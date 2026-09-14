@@ -77,6 +77,30 @@ metadata in agents/openai.yaml. Do not create client-specific copies of the inst
 Session names (`kirby-<key>-<branch>`) and worktree locations (`.claude/worktrees/`)
 are shared with Kirby; do not change them.
 
+**Session state contract** (shared with Kirby; names are defined once in
+`skills/player/scripts/_routing.sh`). All player state lives on the tmux session as session
+user options (tags); no files may track player or session state, and there are no
+compatibility shims for the former git-dir files and mailbox directory.
+
+- Tags: `@orchestra-spawner` (`kirby`|`orchestra`), `@orchestra-repo` (absolute,
+  symlink-resolved main checkout), `@orchestra-branch` (unsanitized branch),
+  `@orchestra-orchestrator` (`codex:<uuid>`|`tmux:<session>`), `@orchestra-agent`
+  (`claude`|`codex`|`gemini`|`copilot`|`opencode`|`custom`), `@orchestra-launching` (`1` while
+  the placeholder pane exists), `@orchestra-last-report` (`<KIND> <ISO-8601 UTC>`),
+  `@orchestra-undelivered` (`<ISO-8601 UTC> <message>` lines, oldest first, under 8 KiB).
+  Absent means unset; never write a sentinel. Values contain no tabs; only
+  `@orchestra-undelivered` contains newlines. Target sessions as `=<name>:` (exact).
+- Pane environment (injected by `spawn.sh`): `ORCHESTRA_SESSION`, `ORCHESTRA_SOCKET`
+  (the tmux server socket holding the session; the pane's own tmux environment is a scratch
+  server), `ORCHESTRA_PLAYER`, `ORCHESTRA_MODE`, `ORCHESTRA_HARNESS`, `ORCHESTRA_MODEL`,
+  `ORCHESTRA_EFFORT`, `ORCHESTRA_PERMISSION_MODE`, `ORCHESTRA_COMMAND`,
+  `ORCHESTRA_CLAUDE_SKILL`. The orchestrator target is never an environment variable.
+- Task body: paste buffer `orchestra-prompt-<session>` on the same server, loaded from stdin
+  by `spawn.sh` and deleted by the launcher.
+- Listing: one `tmux list-panes -a -F` call with `#{@orchestra-*}` fields; no
+  `list-sessions -f` filters (Kirby supports tmux 2.0+). Reads pass `tmux -u` so values
+  survive a non-UTF-8 client locale.
+
 Tests (no model calls, isolated tmux socket):
 ```bash
 python3 orchestra/tests/test_port.py

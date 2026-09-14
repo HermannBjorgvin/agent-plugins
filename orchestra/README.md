@@ -41,7 +41,7 @@ each skill in `agents/openai.yaml`.
 Use one installation route per agent to avoid duplicates. Claude plugin users
 should use the plugin route above; standalone Claude installations use
 `/orchestrator` and `/player` instead of the plugin namespace. When launching or
-adopting standalone Claude players, set `PLAYER_CLAUDE_SKILL=/player` in the
+adopting standalone Claude players, set `ORCHESTRA_CLAUDE_SKILL=/player` in the
 orchestrator's environment. By default, Claude players use `/orchestra:player`
 even when their orchestrator runs in Codex. Installer support
 for an agent does not imply that Orchestra's session launch and reporting have
@@ -123,7 +123,7 @@ The orchestrator uses the scripts in `skills/orchestrator/scripts/`. All accept 
 
 | Command | Purpose |
 | --- | --- |
-| `sessions.sh --all` | List players across repositories. Add `--json` for structured output or `--sample N` to compare activity over time. |
+| `sessions.sh --all` | List players across repositories with their agent, reporting target and last report. Add `--json` for structured output or `--sample N` to compare activity over time. |
 | `spawn.sh --branch B --prompt "Task"` | Create a worktree and tmux session, then start a player. Also accepts `--prompt-file FILE`. |
 | `screen.sh SESSION --history 200` | Read a player's pane. `--lines N` limits the visible output. |
 | `send.sh SESSION "Message"` | Send guidance. Use `--raw` for menus, `--key` for a keypress, or `--type` to type text. |
@@ -135,13 +135,30 @@ New branches start from the freshly fetched default branch. Use `--from REF` to 
 
 Worktrees live under the main checkout's `.claude/worktrees/` directory. Session names use `kirby-<repo path hash>-<branch>`, with branch separators normalized for tmux. These conventions match [Kirby](https://github.com/HermannBjorgvin/Kirby). Session targeting is exact, so a short name cannot select a different player by prefix.
 
-Both prompt options use a file for transport into tmux. Task text therefore does not consume tmux's roughly 16 KiB command allowance. If a new launch fails, its placeholder session is removed and the worktree is kept for a retry.
+Both prompt options load the task into a tmux paste buffer named `orchestra-prompt-<session>` on the same server; the launcher inside the pane reads and deletes it. Task text therefore does not consume tmux's roughly 16 KiB command allowance and is never written into the repository. If a new launch fails, its placeholder session is removed and the worktree is kept for a retry.
+
+## Session tags
+
+Everything the scripts know about a player is stored on its tmux session as session user options (tags). Tags die with the session, are readable by anyone who can reach the tmux server, and are the contract shared with [Kirby](https://github.com/HermannBjorgvin/Kirby), which sets the provenance tags on the sessions it creates and reads the rest. No files are used. Read one with `tmux show-options -qv -t '=SESSION:' @orchestra-agent`; `sessions.sh` shows them all.
+
+| Tag | Value |
+| --- | --- |
+| `@orchestra-spawner` | `orchestra` or `kirby`: which program created the session. |
+| `@orchestra-repo` | Absolute, symlink-resolved path of the main checkout. |
+| `@orchestra-branch` | The branch the session was spawned under, unsanitized (`feature/x`). |
+| `@orchestra-orchestrator` | Reporting target: `codex:<thread-id>` or `tmux:<session>`. Set by `spawn.sh`, replaced by `adopt.sh`. |
+| `@orchestra-agent` | Harness in the pane: `claude`, `codex`, `gemini`, `copilot`, `opencode` or `custom`. The launcher records what actually started. |
+| `@orchestra-launching` | `1` only while the placeholder pane exists. |
+| `@orchestra-last-report` | `<KIND> <ISO-8601 UTC timestamp>` of the last report a transport accepted. |
+| `@orchestra-undelivered` | Reports no transport accepted: `<ISO-8601 UTC timestamp> <message>` lines, oldest first, kept under 8 KiB. |
+
+The player pane receives `ORCHESTRA_SESSION`, `ORCHESTRA_SOCKET` (the tmux server socket that holds the session), `ORCHESTRA_PLAYER`, `ORCHESTRA_MODE`, `ORCHESTRA_HARNESS`, `ORCHESTRA_MODEL`, `ORCHESTRA_EFFORT`, `ORCHESTRA_PERMISSION_MODE`, `ORCHESTRA_COMMAND` and `ORCHESTRA_CLAUDE_SKILL`. The orchestrator target is not passed as an environment variable; the player reads the tag.
 
 ## Reporting
 
-Each worktree stores one orchestrator destination in its local Git metadata. Spawning or adopting a player sets that destination; the player's first message confirms it. Rebinding replaces the destination.
+Each player session carries one reporting target in its `@orchestra-orchestrator` tag. Spawning or adopting a player sets it; the player cannot change it, and `report.sh --orchestrator` only prints it.
 
-Reports go to either a Codex conversation through `codex queue` or a Claude orchestrator's tmux pane. An explicit `--orchestrator codex:<thread-id>` or `--orchestrator tmux:<session>` selects the destination. Otherwise, the scripts detect the orchestrator from the current session. A player's own Codex ID is never used as its parent destination.
+Reports go to either a Codex conversation through `codex queue` or a Claude orchestrator's tmux pane, reached through `ORCHESTRA_SOCKET`. An explicit `--orchestrator codex:<thread-id>` or `--orchestrator tmux:<session>` selects the target when spawning or adopting. Otherwise, the scripts detect the orchestrator from the current session. A player's own Codex ID is never used as its parent target.
 
 Players send four kinds of report:
 
@@ -152,7 +169,7 @@ Players send four kinds of report:
 | `BLOCKED` | Something prevents further progress. |
 | `DONE` | The task is complete, with results and any limitations. |
 
-The reporting script confirms when a transport accepts a message. If delivery fails, it returns a nonzero exit code and tries to save the report under `~/.claude/orchestrator-mail/` (or `ORCHESTRATOR_MAIL_DIR`). It explicitly says when saving also fails. Saved reports do not wake the orchestrator; check that mailbox if a player appears finished but no report arrived.
+The reporting script confirms when a transport accepts a message and records `<KIND> <timestamp>` in the session's `@orchestra-last-report` tag. If delivery fails, it returns a nonzero exit code and appends the report to the session's `@orchestra-undelivered` tag; it explicitly says `NOT RECORDED` when even that fails. Recorded reports do not wake the orchestrator; read the tag if a player appears finished but no report arrived.
 
 ## Resume or hand off a player
 
@@ -163,9 +180,9 @@ spawn.sh --repo PATH --branch feature/search --resume
 spawn.sh --repo PATH --branch feature/search --resume --prompt "Next, add keyboard navigation."
 ```
 
-The default message is `continue`, together with the current reporting destination. You can supply a new message with `--prompt` or `--prompt-file`; the original task is not replayed.
+The player receives a restart note and no task body; the reporting target tag is set again from the current orchestrator. You can supply a new message with `--prompt` or `--prompt-file`; the original task is not replayed.
 
-The script chooses the CLI from `--agent`, then the tmux session tag, then the worktree's recorded agent. If none is available, it tries Claude `--continue`. Only the specific no-conversation diagnostic triggers a fallback to the newest Codex conversation recorded for that worktree. Other errors stop the launch and leave a dead pane to inspect.
+The script chooses the CLI from `--agent`, then the session's `@orchestra-agent` tag. If neither is available, it tries Claude `--continue`. Only the specific no-conversation diagnostic triggers a fallback to the newest Codex conversation recorded for that worktree. Other errors stop the launch and leave a dead pane to inspect.
 
 Use `adopt.sh SESSION` to hand a running, idle player to another orchestrator. Without a new task, the player reports its current status; with task text, it takes the new assignment. Dead panes and bare shells cannot be adopted.
 
@@ -173,10 +190,11 @@ Use `adopt.sh SESSION` to hand a running, idle player to another orchestrator. W
 
 Players inherit configuration and authentication variables, including `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, and `CODEX_HOME`. Known parent-session markers are removed so the new CLI has its own session identity.
 
-The launcher unsets `TMUX` and redirects `TMUX_TMPDIR` to a scratch directory to reduce accidental interaction with the user's tmux server. Reporting uses the saved destination and socket. This environment setup is not a security boundary and does not grant access through a sandbox.
+The launcher unsets `TMUX` and redirects `TMUX_TMPDIR` to a scratch directory to reduce accidental interaction with the user's tmux server. Reporting reaches the real server through `ORCHESTRA_SOCKET` and reads the target from the session tag. This environment setup is not a security boundary and does not grant access through a sandbox.
 
 Known limitations:
 
+- Sessions created by earlier versions of these scripts, which kept state in files, are not recognised.
 - The test suites use fake agent CLIs. They do not verify live model sessions or delivery from a real player through `codex queue`.
 - Codex resume finds conversations by the worktree path in rollout files; paths requiring JSON escaping do not match.
 - OpenCode resume is untested. Gemini and Copilot resume are unsupported.
@@ -193,4 +211,4 @@ python3 orchestra/tests/test_port.py
 bash orchestra/tests/smoke_tmux.sh
 ```
 
-Both suites use temporary Git repositories and fake agent CLIs, without model calls. The Python suite mocks tmux, including exact targeting and command-size limits. The shell suite uses a real tmux server on an isolated socket.
+Both suites use temporary Git repositories and fake agent CLIs, without model calls. The Python suite mocks tmux, including exact targeting, command-size limits, session user options and paste buffers. The shell suite uses a real tmux server on an isolated socket and checks the tags there.
