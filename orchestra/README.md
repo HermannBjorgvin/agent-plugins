@@ -1,155 +1,146 @@
 # Orchestra
 
-Run several coding agents in parallel, each in its own tmux session and git worktree,
-and supervise them from one conversation. The plugin ships two cooperating skills:
+Orchestra lets one conversation coordinate several coding agents across your repositories. Each agent, called a **player**, works on its own branch in a git worktree and tmux session. It sends progress, questions, and results back to the **orchestrator**.
 
-- **orchestrator** splits a backlog into PR-sized tasks, spawns a *player* per task, watches
-  the sessions, relays questions and verifies results.
-- **player** is what runs inside each spawned session: it binds to its orchestrator, does the
-  task in its worktree, and reports PROGRESS / QUESTION / BLOCKED / DONE back.
-
-Players can be Claude Code or Codex CLI (Gemini, Copilot and OpenCode launch too, with fewer
-features). The orchestrator can be a Claude Code session inside tmux, or a Codex desktop/CLI
-thread; reports are delivered by pasting into the orchestrator's tmux pane or by
-`codex queue` respectively.
-
-## Requirements
-
-- Linux or macOS with `bash`, `git`, `coreutils` (`realpath`, `sha256sum`), `ps`/`pgrep`
-- `tmux` 3.x (3.4 tested). The orchestrator itself must run *inside* a tmux session when it is
-  a Claude Code session, so players know where to report.
-- `jq` for `sessions.sh --json` only
-- `script` from util-linux, only for the automatic harness detection on resume
-- The agent CLIs you intend to run: `claude` and/or `codex` (`gemini`, `copilot`, `opencode`
-  optional). Each must already be logged in; the plugin never handles credentials.
+Use Claude Code in tmux or a Codex desktop/CLI conversation as the orchestrator. Players run interactive Claude Code or Codex CLI sessions on the same machine. You can attach to a player's tmux session whenever you want to see its work or talk to it directly.
 
 ## Install
 
-```bash
+In Claude Code:
+
+```text
 /plugin marketplace add HermannBjorgvin/claude-plugins
 /plugin install orchestra@hermannbjorgvin
 ```
 
-That gives Claude Code the skills `/orchestra:orchestrator` and `/orchestra:player`
-(the bare `/orchestrator` and `/player` also work unless another skill uses those names).
+The plugin provides `/orchestra:orchestrator` and `/orchestra:player`. Use the namespaced names to avoid conflicts with other installed skills.
 
-### Codex
-
-Codex reads skills from `~/.agents/skills`. From the installed plugin directory run:
+For Codex, run the installer from the Orchestra plugin directory:
 
 ```bash
-bash codex/install.sh            # or: bash codex/install.sh --skills-dir DIR
+bash codex/install.sh
 ```
 
-It copies the Codex entrypoints (`SKILL.md` + `agents/openai.yaml`, explicit-only invocation)
-to `~/.agents/skills/orchestrator` and `~/.agents/skills/player`, and links their `scripts`
-directories to this plugin's, so both harnesses run the same files. The links point at the
-directory you ran the script from: rerun it after a plugin update (each update lands in a new
-version directory), or run it from a git checkout of this repository to follow the checkout.
-In Codex the skills are invoked as `$orchestrator` and `$player`.
+This copies the Codex skill instructions and metadata into `~/.agents/skills` and links their scripts to the plugin. Invoke them with `$orchestrator` and `$player`. Use `--skills-dir DIR` for another installation directory. If existing skills differ, the installer asks you to use `--force` before replacing them.
 
-## Use
+Rerun the installer after a plugin update: the script links point to a specific installed version. You can also run it from `orchestra/` in a checkout of this repository to link to that checkout.
 
-Start an orchestrator in a tmux session (Claude) or a Codex thread, then:
+## Start a task
 
-```
-/orchestra:orchestrator Split these backlog items into PRs and run them: …
-/orchestra:orchestrator status
+For a Claude orchestrator, open Claude Code inside tmux. A Codex orchestrator can use a desktop or CLI conversation directly.
+
+```text
+/orchestra:orchestrator Add search to this repo. Give the task to a Fable player and have it open a draft PR.
+/orchestra:orchestrator Show me the status of my players.
 ```
 
-The orchestrator uses the scripts in `skills/orchestrator/scripts/` (every one accepts
-`--repo PATH`, and session names match exactly, never by prefix):
+In Codex, use `$orchestrator` with the same task text. The orchestrator chooses a branch and starts a player, then receives its reports in the conversation. Each assignment should fit one branch and PR; the orchestrator can coordinate assignments across multiple repositories.
 
-| Script | Purpose |
-| --- | --- |
-| `sessions.sh [--all] [--json] [--sample N]` | List player sessions with a busy/idle/dead heuristic |
-| `spawn.sh --branch B (--prompt-file F \| --prompt T) [--agent …] [--model …] [--effort …]` | Create worktree + tmux session and start a player |
-| `spawn.sh --branch B --resume [--prompt "Next: …"]` | Restart a dead or vanished player's conversation |
-| `screen.sh SESSION [--lines N] [--history N]` | Show a pane's text |
-| `send.sh SESSION TEXT` (`--raw`, `--key`, `--type`) | Type into a player's pane |
-| `adopt.sh SESSION [--orchestrator T] [text]` | Rebind an idle player to this orchestrator |
-| `kill.sh SESSION` | Kill one player's tmux session (worktree and branch stay) |
+The spawn command prints the worktree and tmux session name. To inspect a player yourself:
 
-Each player gets a worktree at `<main checkout>/.claude/worktrees/<branch>` and a tmux
-session named `kirby-<16 hex of the repo path>-<branch>`; both conventions are shared with
-[Kirby](https://github.com/HermannBjorgvin/Kirby) so its UI shows the same sessions. New
-branches start from the freshly fetched default branch unless `--from REF` is given.
+```bash
+tmux attach -t '=SESSION_NAME'
+```
 
-The task travels in a file (`--prompt-file`), so it can be any length; the launcher composes
-the first message as the player invocation, the reporting target and the task body.
+Detach with **Ctrl+B, then D**. Ctrl+C interrupts the running agent.
 
-### Models and effort
+## Requirements
 
-| Harness | Default model | Default effort |
+- Linux or macOS with Bash, Git, coreutils (`realpath`, `sha256sum`), and `ps`/`pgrep`. Tested on Linux.
+- tmux 3.x; tested with 3.4.
+- An authenticated `claude` or `codex` CLI for each type of player you want to run.
+- `jq` for JSON session listings.
+- util-linux `script` for automatic CLI detection during resume.
+
+Gemini, Copilot, and OpenCode can also be launched, but have more limited resume support. The plugin uses each CLI's existing authentication and permissions.
+
+## Models and effort
+
+| Player | Default model | Default effort |
 | --- | --- | --- |
 | Claude Code | `opus` | `high` |
-| Claude Code (`--model fable`) | `fable` | `high` |
+| Claude Code with `--model fable` | `fable` | `high` |
 | Codex | `gpt-6-astra` | `medium` |
-| Codex, any other model | as given | `high` |
+| Codex with another model | The supplied model | `high` |
 
-`--model` and `--effort` (`low`, `medium`, `high`, `xhigh`, `max`) override the presets on
-fresh launches. On `--resume` nothing is added unless given: Claude continues with its own
-settings and Codex resumes with its configured default model. `--permission-mode` applies to
-Claude only. Whether a model or effort value is available is the CLI's business.
+Use `--model` and `--effort` to override these defaults. The scripts accept `low`, `medium`, `high`, `xhigh`, and `max`; the selected CLI determines which combinations are available. `--permission-mode` applies only to Claude Code.
 
-### Reporting
+Resume passes model and effort options only when you supply them. Codex otherwise uses its configured default model. Claude's restoration of model and effort has not been verified, so pass those options explicitly when you need a particular configuration.
 
-Inside the player, `report.sh KIND "text"` sends `[player NAME] KIND: text` to the orchestrator.
-The destination is bound per worktree (in its git directory, together with the tmux socket) at
-spawn/adopt time and re-confirmed by the player from its first message; an explicit
-`--orchestrator codex:<thread-id>` or `tmux:<session>` always wins, and a player never
-substitutes its own Codex thread for its parent.
+## Scripts
 
-`report.sh` prints `queued for …` or `sent to …` only when the transport accepted the message.
-Otherwise it exits nonzero and prints `NOT DELIVERED …; saved in <mailbox>` (a log under
-`~/.claude/orchestrator-mail/`, or `ORCHESTRATOR_MAIL_DIR`) or `NOT DELIVERED … and NOT SAVED`
-with the text echoed. The mailbox does not wake the orchestrator; check it when a player looks
-finished but nothing arrived.
+The orchestrator uses the scripts in `skills/orchestrator/scripts/`. All accept `--repo PATH` to select a repository from elsewhere.
 
-### Resume and handoff
+| Command | Purpose |
+| --- | --- |
+| `sessions.sh --all` | List players across repositories. Add `--json` for structured output or `--sample N` to compare activity over time. |
+| `spawn.sh --branch B --prompt "Task"` | Create a worktree and tmux session, then start a player. Also accepts `--prompt-file FILE`. |
+| `screen.sh SESSION --history 200` | Read a player's pane. `--lines N` limits the visible output. |
+| `send.sh SESSION "Message"` | Send guidance. Use `--raw` for menus, `--key` for a keypress, or `--type` to type text. |
+| `adopt.sh SESSION` | Connect an idle player to the current orchestrator. Optional text gives it a new assignment. |
+| `spawn.sh --branch B --resume` | Restart a stopped player in its existing worktree. |
+| `kill.sh SESSION` | Stop one player's tmux session. Its branch and worktree remain. |
 
-- `spawn.sh --branch B --resume` restarts a dead or vanished player in its worktree and sends
-  "continue" with the current reporting target. The original task is never replayed. Harness:
-  `--agent`, else the session's tag, else the harness recorded in the worktree, else Claude
-  `--continue` and, only if Claude reports no conversation, the newest Codex conversation
-  recorded for that worktree. Any other failure leaves a dead pane to inspect.
-- `spawn.sh … --resume --prompt "Next: …"` resumes with a new assignment.
-- `adopt.sh SESSION` hands an idle player to a different orchestrator (dead panes and
-  shell-owned panes are refused). Without text the player answers with a PROGRESS summary;
-  with text it takes that as its new task.
+New branches start from the freshly fetched default branch. Use `--from REF` to choose another starting point, or `--dry-run` to preview a spawn without writes or fetching.
 
-### Isolation
+Worktrees live under the main checkout's `.claude/worktrees/` directory. Session names use `kirby-<repo path hash>-<branch>`, with branch separators normalized for tmux. These conventions match [Kirby](https://github.com/HermannBjorgvin/Kirby). Session targeting is exact, so a short name cannot select a different player by prefix.
 
-Players run with the parent session markers removed (`CLAUDECODE`, `CLAUDE_CODE_*` session
-variables, `CODEX_THREAD_ID`, …) so they do not think they are nested and do save their
-transcripts, while `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY` and `CODEX_HOME` are inherited.
-`TMUX` is unset and `TMUX_TMPDIR` points at a scratch directory, so nothing a player runs can
-reach the tmux server hosting your own sessions.
+Both prompt options use a file for transport into tmux. Task text therefore does not consume tmux's roughly 16 KiB command allowance. If a new launch fails, its placeholder session is removed and the worktree is kept for a retry.
+
+## Reporting
+
+Each worktree stores one orchestrator destination in its local Git metadata. Spawning or adopting a player sets that destination; the player's first message confirms it. Rebinding replaces the destination.
+
+Reports go to either a Codex conversation through `codex queue` or a Claude orchestrator's tmux pane. An explicit `--orchestrator codex:<thread-id>` or `--orchestrator tmux:<session>` selects the destination. Otherwise, the scripts detect the orchestrator from the current session. A player's own Codex ID is never used as its parent destination.
+
+Players send four kinds of report:
+
+| Report | Meaning |
+| --- | --- |
+| `PROGRESS` | A meaningful milestone. |
+| `QUESTION` | A decision that needs input. |
+| `BLOCKED` | Something prevents further progress. |
+| `DONE` | The task is complete, with results and any limitations. |
+
+The reporting script confirms when a transport accepts a message. If delivery fails, it returns a nonzero exit code and tries to save the report under `~/.claude/orchestrator-mail/` (or `ORCHESTRATOR_MAIL_DIR`). It explicitly says when saving also fails. Saved reports do not wake the orchestrator; check that mailbox if a player appears finished but no report arrived.
+
+## Resume or hand off a player
+
+Resume restores a conversation in its existing worktree:
+
+```bash
+spawn.sh --repo PATH --branch feature/search --resume
+spawn.sh --repo PATH --branch feature/search --resume --prompt "Next, add keyboard navigation."
+```
+
+The default message is `continue`, together with the current reporting destination. You can supply a new message with `--prompt` or `--prompt-file`; the original task is not replayed.
+
+The script chooses the CLI from `--agent`, then the tmux session tag, then the worktree's recorded agent. If none is available, it tries Claude `--continue`. Only the specific no-conversation diagnostic triggers a fallback to the newest Codex conversation recorded for that worktree. Other errors stop the launch and leave a dead pane to inspect.
+
+Use `adopt.sh SESSION` to hand a running, idle player to another orchestrator. Without a new task, the player reports its current status; with task text, it takes the new assignment. Dead panes and bare shells cannot be adopted.
+
+## Environment and limitations
+
+Players inherit configuration and authentication variables, including `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, and `CODEX_HOME`. Known parent-session markers are removed so the new CLI has its own session identity.
+
+The launcher unsets `TMUX` and redirects `TMUX_TMPDIR` to a scratch directory to reduce accidental interaction with the user's tmux server. Reporting uses the saved destination and socket. This environment setup is not a security boundary and does not grant access through a sandbox.
+
+Known limitations:
+
+- The test suites use fake agent CLIs. They do not verify live model sessions or delivery from a real player through `codex queue`.
+- Codex resume finds conversations by the worktree path in rollout files; paths requiring JSON escaping do not match.
+- OpenCode resume is untested. Gemini and Copilot resume are unsupported.
+- Automatic CLI detection during resume keeps a `script` transcript in `/tmp` for the Claude session's lifetime.
+- The pane check treats any non-shell foreground process as an agent, including an editor or pager.
+- Host permissions still apply. The plugin does not change AppArmor or sandbox settings.
 
 ## Tests
 
-Both suites use temporary git repositories and fake `claude`/`codex` binaries; no model is
-called and no user tmux session is touched.
+Run from the repository root:
 
 ```bash
-python3 orchestra/tests/test_port.py      # mock tmux (enforces exact targets and the 16 KiB limit)
-bash orchestra/tests/smoke_tmux.sh        # real tmux server on an isolated socket
+python3 orchestra/tests/test_port.py
+bash orchestra/tests/smoke_tmux.sh
 ```
 
-## Limitations
-
-- Live launches of real Claude/Codex players and `codex queue` delivery from a real player are
-  not covered by the tests here (fake binaries only).
-- The plugin does not grant host access: if a sandbox blocks tmux, Codex state writes, a
-  repository or the network, the scripts report it and stop. They never change AppArmor or
-  sandbox settings.
-- Codex conversation lookup on resume matches the worktree path recorded in the rollout file;
-  paths that need JSON escaping would not match.
-- Whether Claude `--continue` restores the previous model/effort is not verified; pass them on
-  resume when they must be guaranteed. Codex resumes with its configured default unless
-  `--model` is given.
-- OpenCode resume is untested; Gemini and Copilot have no resume support.
-- The automatic harness detection on resume keeps a `script(1)` typescript in `/tmp` for the
-  Claude session's lifetime.
-- The pane-ownership check treats any non-shell foreground process as an agent, so a pane
-  running some other program (an editor, a pager) counts as agent-owned.
+Both suites use temporary Git repositories and fake agent CLIs, without model calls. The Python suite mocks tmux, including exact targeting and command-size limits. The shell suite uses a real tmux server on an isolated socket.
