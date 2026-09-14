@@ -1,0 +1,5 @@
+interface:
+  display_name: "Player"
+  short_description: "Report coding progress to a designated orchestrator"
+policy:
+  allow_implicit_invocation: false

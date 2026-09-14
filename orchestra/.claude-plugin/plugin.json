@@ -1,11 +1,11 @@
 {
   "name": "orchestra",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Run parallel coding agents (players) in tmux sessions and git worktrees, supervised by an orchestrator that receives their reports",
   "author": {
     "name": "hermannbjorgvin"
   },
-  "repository": "https://github.com/HermannBjorgvin/claude-plugins",
+  "repository": "https://github.com/HermannBjorgvin/agent-plugins",
   "license": "MIT",
   "keywords": ["tmux", "worktree", "orchestrator", "agents", "codex"]
 }

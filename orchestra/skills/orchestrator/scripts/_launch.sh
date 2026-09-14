@@ -8,7 +8,7 @@
 #   PLAYER_MODEL, PLAYER_EFFORT, PLAYER_PERM   empty = not given (resume: CLI settings apply)
 #   PLAYER_CMD          custom harness command; receives the composed prompt as $PROMPT
 #   PLAYER_PROMPT_FILE  task body written by spawn.sh
-#   PLAYER_CLAUDE_SKILL Claude player invocation (/player, or /<plugin>:player from a plugin)
+#   PLAYER_CLAUDE_SKILL Claude player invocation (defaults to /orchestra:player)
 #   ORCHESTRATOR_TARGET reporting destination named in the preamble
 #
 # Resume never starts a fresh conversation: a harness that cannot find one exits nonzero and the
@@ -26,7 +26,7 @@ NO_CONVERSATION='No conversation found to continue'
 fail() { echo "player launch: $*" >&2; exit 1; }
 remember() { [ -n "$gitdir" ] && printf '%s\n' "$1" > "$gitdir/player-agent" 2>/dev/null; true; }
 preamble() {
-  local inv; case "$1" in codex) inv='$player';; *) inv="${PLAYER_CLAUDE_SKILL:-/player}";; esac
+  local inv; case "$1" in codex) inv='$player';; *) inv="${PLAYER_CLAUDE_SKILL:-/orchestra:player}";; esac
   if [ "$mode" = resume ]; then
     printf '%s %s\n\nYour orchestrator reporting target is: %s. Your session was restarted in this worktree; files and commits are intact, so do not redo finished work.\n\n%s' "$inv" "$orch" "$orch" "$body"
   else

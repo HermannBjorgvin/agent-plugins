@@ -6,24 +6,74 @@ Use Claude Code in tmux or a Codex desktop/CLI conversation as the orchestrator.
 
 ## Install
 
-In Claude Code:
+### Claude Code
 
 ```text
-/plugin marketplace add HermannBjorgvin/claude-plugins
+/plugin marketplace add HermannBjorgvin/agent-plugins
 /plugin install orchestra@hermannbjorgvin
 ```
 
 The plugin provides `/orchestra:orchestrator` and `/orchestra:player`. Use the namespaced names to avoid conflicts with other installed skills.
 
-For Codex, run the installer from the Orchestra plugin directory:
+### Codex and other agents
+
+Install both skills with [Vercel's skills CLI](https://github.com/vercel-labs/skills)
+(requires Node.js and npm):
 
 ```bash
-bash codex/install.sh
+npx skills@latest add HermannBjorgvin/agent-plugins --global --skill orchestrator player
 ```
 
-This copies the Codex skill instructions and metadata into `~/.agents/skills` and links their scripts to the plugin. Invoke them with `$orchestrator` and `$player`. Use `--skills-dir DIR` for another installation directory. If existing skills differ, the installer asks you to use `--force` before replacing them.
+Choose the agents you use when prompted. Global installation is recommended for
+Codex because players run in fresh worktrees and need access to both skills.
+To install directly for Codex:
 
-Rerun the installer after a plugin update: the script links point to a specific installed version. You can also run it from `orchestra/` in a checkout of this repository to link to that checkout.
+```bash
+npx skills@latest add HermannBjorgvin/agent-plugins --global --agent codex --skill orchestrator player
+```
+
+Start a new Codex session, then invoke `$orchestrator` or `$player`. Other agents
+use their own skill invocation syntax. Install **both** skills in the same scope:
+the orchestrator uses the player's reporting helpers. Both installation routes
+use the same `SKILL.md` files and bundled scripts; Codex metadata lives beside
+each skill in `agents/openai.yaml`.
+
+Use one installation route per agent to avoid duplicates. Claude plugin users
+should use the plugin route above; standalone Claude installations use
+`/orchestrator` and `/player` instead of the plugin namespace. When launching or
+adopting standalone Claude players, set `PLAYER_CLAUDE_SKILL=/player` in the
+orchestrator's environment. By default, Claude players use `/orchestra:player`
+even when their orchestrator runs in Codex. Installer support
+for an agent does not imply that Orchestra's session launch and reporting have
+been tested with it; see [Requirements](#requirements) and [limitations](#environment-and-limitations).
+
+Update the skills installed through the CLI with:
+
+```bash
+npx skills@latest update --global
+```
+
+This updates globally installed skills managed by the CLI. Claude plugin updates
+are managed through Claude Code.
+
+### Existing installations
+
+If you used the former `codex/install.sh`, back up any customizations and remove
+only its `orchestrator` and `player` directories from `~/.agents/skills` (or the
+custom directory you supplied) before installing with the skills CLI. Those
+copies contain instructions and script links tied to the manual installation.
+
+### Local development
+
+From this repository's root:
+
+```bash
+npx skills@latest add . --global --agent codex --skill orchestrator player
+```
+
+Rerun the local install after editing the source skills and start a new session.
+The installer manages its own installed copies; this is not a live link to the
+checkout.
 
 ## Start a task
 

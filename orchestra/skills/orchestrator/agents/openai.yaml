@@ -1,0 +1,5 @@
+interface:
+  display_name: "Orchestrator"
+  short_description: "Coordinate coding players across tmux sessions and worktrees"
+policy:
+  allow_implicit_invocation: false

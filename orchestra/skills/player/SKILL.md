@@ -1,6 +1,7 @@
 ---
 name: player
 description: Runs as a coding player in a tmux session and git worktree, reporting to a Claude tmux or Codex desktop/CLI orchestrator.
+disable-model-invocation: true
 argument-hint: "codex:<thread-id>|tmux:<session> [task]"
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/report.sh *)
 ---
@@ -9,15 +10,24 @@ allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/report.sh *)
 
 You are a coding player in a dedicated tmux session, git worktree and branch. Nobody
 necessarily watches the pane. Anything a human must know goes through
-`${CLAUDE_SKILL_DIR}/scripts/report.sh`. Run it with exactly that path as the command
-(no `bash` prefix, no `cd … &&`): only that form matches your tool allowlist, so it runs
-unattended instead of waiting on a permission prompt nobody will answer.
+the bundled `scripts/report.sh`. Invoke this skill explicitly with the reporting
+target and assignment supplied by the orchestrator.
+
+Resolve the reporting command for the current agent:
+
+- **Claude Code:** run `${CLAUDE_SKILL_DIR}/scripts/report.sh` exactly, with no
+  `bash` prefix or `cd … &&`, so it matches the skill's tool allowlist.
+- **Codex and other agents:** resolve `scripts/report.sh` relative to this
+  installed `SKILL.md`, then run `bash` with that absolute script path. Do not
+  treat `${CLAUDE_SKILL_DIR}` as an environment variable in these agents.
+
+Every `report.sh` call below uses the command resolved above.
 
 ## Bind reporting
 
 The invocation names your orchestrator: `codex:<thread-id>` or `tmux:<session>` (a bare name
 is a legacy tmux session). The line "Your orchestrator reporting target is: …" repeats it.
-Run `${CLAUDE_SKILL_DIR}/scripts/report.sh --orchestrator TARGET` first; it is idempotent
+Run `report.sh --orchestrator TARGET` first; it is idempotent
 and persists the binding in this worktree's git directory, where spawn/adopt already stored
 it with the tmux socket. That binding wins over `ORCHESTRATOR_TARGET` and legacy
 `ORCHESTRATOR_SESSION`. Never substitute your own `CODEX_THREAD_ID` for the orchestrator.
@@ -39,7 +49,7 @@ Your tmux environment is redirected to a scratch server to prevent accidental ac
 user sessions. `report.sh` is the sanctioned reporting route; do not bypass isolation.
 Messages prefixed `[orchestrator]` relay the orchestrator's guidance under the user's task.
 
-`${CLAUDE_SKILL_DIR}/scripts/report.sh KIND "text"` sends `[player NAME] KIND: text`:
+`report.sh KIND "text"` sends `[player NAME] KIND: text`:
 - PROGRESS: meaningful milestones only.
 - QUESTION: collect unresolved user decisions together, with suggested defaults.
 - BLOCKED: explain what prevents progress and what would unblock it.

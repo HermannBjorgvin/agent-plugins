@@ -4,7 +4,8 @@ Real temporary git repositories; tmux, claude and codex are stateful mocks. The 
 enforces tmux's ~16 KiB command limit, exact `=name`/`=name:` targeting and remain-on-exit
 (a pane goes dead when its command exits). Run: python3 test_port.py  (SKILLS_ROOT selects
 the installation to test; default is this plugin's skills/ directory). The expected Claude
-player invocation follows the layout: /<plugin>:player under a plugin manifest, else /player.
+player invocation defaults to the Claude plugin in both layouts, with an explicit
+PLAYER_CLAUDE_SKILL override for standalone Claude installations.
 """
 import os, json, re, subprocess, tempfile, unittest
 from pathlib import Path
@@ -14,7 +15,7 @@ def player_invocation():
     if m.exists():
         found = re.search(r'"name"\s*:\s*"([^"]+)"', m.read_text())
         if found: return '/%s:player' % found.group(1)
-    return '/player'
+    return '/orchestra:player'
 INV = player_invocation()
 ID = '11111111-2222-3333-4444-555555555555'
 UUID = '0199a000-1111-7000-8000-000000000042'
@@ -142,6 +143,22 @@ class PortTests(unittest.TestCase):
         self.spawn('--agent', 'claude', '--model', 'fable', '--orchestrator', 'tmux:parent')
         c = self.calls()[-1]; self.assertEqual(c['args'][:4], ['--model', 'fable', '--effort', 'high'])
         self.assertTrue(c['args'][-1].startswith(INV+' tmux:parent'))
+    def test_standalone_claude_override_spawn_resume_and_adopt(self):
+        self.env['PLAYER_CLAUDE_SKILL'] = '/player'
+        self.spawn('--agent', 'claude')
+        self.assertTrue(self.calls()[-1]['args'][-1].startswith('/player codex:'+ID))
+        self.env['TEST_PANE_ALIVE'] = '1'
+        self.spawn('--resume', '--agent', 'claude', prompt=False)
+        self.assertTrue(self.calls()[-1]['args'][-1].startswith('/player codex:'+ID))
+        self.run_cmd(['bash', self.script('adopt.sh'), self.session,
+                      '--agent', 'claude', '--orchestrator', 'tmux:new-parent'])
+        self.assertIn('"/player tmux:new-parent"', self.tmux_log())
+    def test_claude_default_adopt_from_either_installation(self):
+        self.env['TEST_PANE_ALIVE'] = '1'
+        self.spawn('--agent', 'claude')
+        self.run_cmd(['bash', self.script('adopt.sh'), self.session,
+                      '--agent', 'claude', '--orchestrator', 'tmux:new-parent'])
+        self.assertIn('"'+INV+' tmux:new-parent"', self.tmux_log())
     def test_sol_override(self):
         self.spawn('--agent', 'codex', '--model', 'gpt-5.6-sol', '--effort', 'xhigh'); self.assertEqual(self.calls()[-1]['args'][3], 'model_reasoning_effort="xhigh"')
     def test_env_markers_stripped_config_kept(self):

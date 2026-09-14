@@ -1,16 +1,40 @@
-# Claude Code plugins
+# Agent plugins
 
-A small collection of plugins I use with Claude Code. Install whichever ones fit your workflow.
+A small collection of skills and plugins for coding agents. Install whichever ones fit your workflow.
 
 ## Install
+
+### Claude Code
 
 Add the marketplace once, then choose a plugin:
 
 ```text
-/plugin marketplace add HermannBjorgvin/claude-plugins
+/plugin marketplace add HermannBjorgvin/agent-plugins
 /plugin install orchestra@hermannbjorgvin
 /plugin install tv-pauser@hermannbjorgvin
 ```
+
+### Codex and other agents
+
+Install Orchestra's shared skills with [Vercel's skills CLI](https://github.com/vercel-labs/skills):
+
+```bash
+npx skills@latest add HermannBjorgvin/agent-plugins --global --skill orchestrator player
+```
+
+Choose your agents when prompted. For Codex, we recommend global installation so
+players in new worktrees can find both skills. To target Codex directly:
+
+```bash
+npx skills@latest add HermannBjorgvin/agent-plugins --global --agent codex --skill orchestrator player
+```
+
+Start a new Codex session, then use `$orchestrator`. Install both skills together.
+The installer requires Node.js and npm; it installs the same instructions and
+scripts used by the Claude plugin. TV Pauser is Claude Code only.
+
+Use one installation method per agent to avoid duplicate skills. For updates and
+migration from the manual installer, see [Orchestra's installation guide](./orchestra/#install).
 
 ## Plugins
 
