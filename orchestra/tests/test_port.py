@@ -62,7 +62,7 @@ if c == 'kill-session': del state[target(a.index('-t')+1)]; save(); sys.exit(0)
 if c == 'kill-server': state.clear(); buffers.clear(); save(); sys.exit(0)
 if c == 'display-message':
     n = target(a.index('-t')+1) if '-t' in a else None; key = a[-1]; s = state.get(n, {})
-    print({'#S': 'parent', '#{pane_dead}': str(s.get('dead', 1)), '#{pane_current_path}': s.get('path', ''),
+    print({'#S': os.environ.get('TEST_TMUX_SESSION', 'parent'), '#{pane_dead}': str(s.get('dead', 1)), '#{pane_current_path}': s.get('path', ''),
            '#{socket_path}': '/tmp/test-socket', '#{pane_current_command}': os.environ.get('TEST_PANE_COMMAND', 'claude'),
            '#{pane_pid}': str(os.getpid())}.get(key, '')); sys.exit(0)
 if c == 'show-options':
@@ -110,7 +110,7 @@ if c == 'list-panes':
     fmt = a[a.index('-F')+1] if '-F' in a else '#{session_name}'
     for n, s in state.items():
         vals = {'session_name': n, 'pane_dead': str(s.get('dead', 1)), 'pane_current_command': 'bash', 'window_activity': '0',
-                'pane_current_path': s.get('path', ''), 'pane_title': ''}
+                'pane_current_path': s.get('path', ''), 'pane_title': os.environ.get('TEST_PANE_TITLE', '')}
         print(re.sub(r'#\{([^}]+)\}', lambda m: s['options'].get(m.group(1), '') if m.group(1).startswith('@') else vals.get(m.group(1), ''), fmt))
     sys.exit(0)
 sys.exit(0)
@@ -146,8 +146,8 @@ class PortTests(unittest.TestCase):
     def project_key(self):
         import hashlib; return hashlib.sha256(str(self.repo.resolve()).encode()).hexdigest()[:16]
     def stub(self, name, text): p = self.bin/name; p.write_text(text); p.chmod(0o755)
-    def run_cmd(self, args, cwd=None, ok=True, env=None):
-        x = subprocess.run(args, cwd=cwd or self.repo, env=env or self.env, text=True, capture_output=True)
+    def run_cmd(self, args, cwd=None, ok=True, env=None, stdin=None):
+        x = subprocess.run(args, cwd=cwd or self.repo, env=env or self.env, text=True, capture_output=True, input=stdin)
         if ok: self.assertEqual(x.returncode, 0, x.stderr+'\n'+x.stdout)
         return x
     def script(self, name): return str(ROOT/('player/scripts/report.sh' if name == 'report.sh' else 'orchestrator/scripts/'+name))
@@ -163,6 +163,8 @@ class PortTests(unittest.TestCase):
         f = self.base/'tmux-buffers.json'
         return json.loads(f.read_text()) if f.exists() else {}
     def tag(self, name, session=None): return self.state()[session or self.session]['options'].get(name)
+    def last_report(self):
+        v = self.tag('@orchestra-last-report'); self.assertIsNotNone(v, '@orchestra-last-report is unset'); return v
     def set_state(self, s): (self.base/'tmux-state.json').write_text(json.dumps(s))
     def drop_tag(self, name):
         s = self.state(); s[self.session]['options'].pop(name, None); self.set_state(s)
@@ -293,11 +295,11 @@ class PortTests(unittest.TestCase):
         self.spawn('--agent', 'codex')
         x = self.report('PROGRESS', 'one\ntwo $(touch BAD)')
         self.assertEqual(self.calls()[-1]['args'][:3], ['queue', '--thread', ID]); self.assertIn('queued for', x.stdout)
-        self.assertRegex(self.tag('@orchestra-last-report'), '^PROGRESS '+STAMP+'$'); self.assertIsNone(self.tag('@orchestra-undelivered'))
+        self.assertRegex(self.last_report(), '^PROGRESS '+STAMP+'$'); self.assertIsNone(self.tag('@orchestra-undelivered'))
         self.env['TEST_CLI_EXIT'] = '1'; x = self.report('DONE', 'saved', ok=False)
         self.assertEqual(x.returncode, 1); self.assertIn('NOT DELIVERED', x.stderr); self.assertIn('recorded on session '+self.session, x.stderr)
         self.assertRegex(self.tag('@orchestra-undelivered'), '^'+STAMP+r' \[player feature-test\] DONE: saved$')
-        self.assertRegex(self.tag('@orchestra-last-report'), '^PROGRESS ')            # refused reports are not "last accepted"
+        self.assertRegex(self.last_report(), '^PROGRESS ')            # refused reports are not "last accepted"
         self.report('BLOCKED', 'two\nlines\twith tab', ok=False)
         lines = self.tag('@orchestra-undelivered').split('\n'); self.assertEqual(len(lines), 2)
         self.assertRegex(lines[1], '^'+STAMP+r' \[player feature-test\] BLOCKED: two lines with tab$')
@@ -316,6 +318,20 @@ class PortTests(unittest.TestCase):
         x = self.report('DONE', 'lost text', env=self.env, ok=False)      # no ORCHESTRA_SESSION / ORCHESTRA_SOCKET
         self.assertEqual(x.returncode, 1); self.assertIn('NOT DELIVERED', x.stderr); self.assertIn('NOT RECORDED', x.stderr); self.assertIn('DONE: lost text', x.stderr)
         self.assertEqual(len(self.calls()), n); self.assertIsNone(self.tag('@orchestra-undelivered'))
+    def test_report_from_pane_without_orchestra_env_uses_tmux(self):
+        self.spawn('--agent', 'codex')      # a session with the tags but, for this test, a pane Kirby started
+        inside = dict(self.env, TMUX='/tmp/custom-socket,7,0', TEST_TMUX_SESSION=self.session)
+        self.assertEqual(self.report('--orchestrator', env=inside).stdout.strip(), 'codex:'+ID)
+        (self.base/'tmux-log').unlink(); x = self.report('PROGRESS', 'derived', env=inside); self.assertIn('queued for', x.stdout)
+        self.assertEqual(self.calls()[-1]['args'][:5], ['queue', '--thread', ID, '--message', '[player feature-test] PROGRESS: derived'])
+        self.assertRegex(self.last_report(), '^PROGRESS '+STAMP+'$'); self.assertIn('"-S", "/tmp/custom-socket", "set-option"', self.tmux_log())
+        self.env['TEST_CLI_EXIT'] = '1'; x = self.report('DONE', 'derived fail', env=inside, ok=False)
+        self.assertIn('recorded on session '+self.session, x.stderr); self.assertIn('DONE: derived fail', self.tag('@orchestra-undelivered'))
+    def test_help_text_is_comment_only(self):
+        x = self.run_cmd(['bash', self.script('spawn.sh'), '--help']); self.assertIn('Usage: spawn.sh', x.stdout)
+        self.assertFalse([l for l in x.stdout.splitlines() if l.startswith(('.', 'set ', 'AGENT='))], x.stdout[-200:])
+        x = self.run_cmd(['bash', self.script('report.sh')], ok=False); self.assertEqual(x.returncode, 2); self.assertIn('Usage: report.sh', x.stderr)
+        self.assertFalse([l for l in x.stderr.splitlines() if l.startswith(('set ', '.'))], x.stderr[-200:])
     def test_orchestrator_query_is_read_only(self):
         self.spawn('--agent', 'codex')
         self.assertEqual(self.report('--orchestrator').stdout.strip(), 'codex:'+ID)
@@ -331,7 +347,7 @@ class PortTests(unittest.TestCase):
         self.report('PROGRESS', 'tmux delivery', env=self.player_env(ORCHESTRA_SOCKET='/tmp/custom-socket')); log = self.tmux_log()
         self.assertIn('"-S", "/tmp/custom-socket", "load-buffer"', log); self.assertIn('paste-buffer', log); self.assertIn('"=parent:"', log)
         self.assertIn('PROGRESS: tmux delivery', (self.base/'buffer').read_text())
-        self.assertRegex(self.tag('@orchestra-last-report'), '^PROGRESS '+STAMP+'$')
+        self.assertRegex(self.last_report(), '^PROGRESS '+STAMP+'$')
         self.run_cmd(['tmux', 'kill-session', '-t', '=parent'])
         x = self.report('DONE', 'gone', env=self.player_env(ORCHESTRA_SOCKET='/tmp/custom-socket'), ok=False)
         self.assertIn('is gone', x.stderr); self.assertIn('DONE: gone', self.tag('@orchestra-undelivered'))
@@ -377,6 +393,8 @@ class PortTests(unittest.TestCase):
                              (shown, self.session, 'codex', 'codex:'+ID, '', 'feature/test', str(self.repo.resolve())))
         self.report('DONE', 'finished')
         r = json.loads(self.run_cmd(['bash', self.script('sessions.sh'), '--all', '--json']).stdout)[0]; self.assertRegex(r['last_report'], '^DONE '+STAMP+'$')
+        self.env['TEST_PANE_TITLE'] = 'left\tright'
+        r = json.loads(self.run_cmd(['bash', self.script('sessions.sh'), '--all', '--json']).stdout)[0]; self.assertEqual(r['title'], 'left\tright'); del self.env['TEST_PANE_TITLE']
         text = self.run_cmd(['bash', self.script('sessions.sh'), '--all']).stdout.splitlines()
         self.assertIn('AGENT', text[0]); self.assertIn('ORCHESTRATOR', text[0]); self.assertIn('LAST-REPORT', text[0])
         self.assertIn('codex', text[1]); self.assertIn('codex:'+ID, text[1]); self.assertIn('DONE ', text[1])
@@ -388,8 +406,10 @@ class PortTests(unittest.TestCase):
         for s in ('screen.sh', 'kill.sh'):
             x = self.run_cmd(['bash', self.script(s), 'feature', '--repo', str(self.repo)], ok=False); self.assertNotEqual(x.returncode, 0)
         self.run_cmd(['bash', self.script('send.sh'), self.session, 'y'*30000])          # over tmux's command limit: goes through load-buffer
+        s2 = 'kirby-%s-feature-test-2' % self.project_key()
+        self.run_cmd(['tmux', 'load-buffer', '-b', 'orchestra-prompt-'+s2, '-'], stdin='leftover\n'); self.assertIn('orchestra-prompt-'+s2, self.buffers())
         self.run_cmd(['bash', self.script('kill.sh'), 'feature-test-2', '--repo', str(self.repo)])
-        self.assertEqual(sorted(self.state()), [self.session])
+        self.assertEqual(sorted(self.state()), [self.session]); self.assertEqual(self.buffers(), {})
 
     # --- the contract itself ------------------------------------------------------------
     def test_scripts_carry_no_legacy_names(self):

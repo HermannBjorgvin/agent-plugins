@@ -109,8 +109,12 @@ bash "$O/send.sh" "$S1" "$(head -c 30000 /dev/zero | tr '\0' y)END" >/dev/null 2
 check "screen.sh exact" "bash '$O/screen.sh' feature-x --repo '$T/repo' >/dev/null"
 check "screen.sh rejects missing" "! bash '$O/screen.sh' feature --repo '$T/repo' 2>/dev/null"
 check "kill.sh rejects missing prefix" "! bash '$O/kill.sh' feature --repo '$T/repo' 2>/dev/null"
+printf 'leftover\n' | tm load-buffer -b "orchestra-prompt-$S2" -
 bash "$O/kill.sh" feature-x-2 --repo "$T/repo" >/dev/null
 check "kill.sh killed only feature-x-2" "! tm has-session -t '=$S2' 2>/dev/null && tm has-session -t '=$S1'"
+check "kill.sh removed the leftover prompt buffer" "! tm list-buffers -F '#{buffer_name}' | grep -qx 'orchestra-prompt-$S2'"
+check "spawn.sh --help prints comments only" "bash '$O/spawn.sh' --help | grep -q 'Usage: spawn.sh' && ! bash '$O/spawn.sh' --help | grep -qE '^(\\.|set |AGENT=)'"
+check "report.sh usage prints comments only" "bash '$P/report.sh' 2>&1 | grep -q 'Usage: report.sh' && ! bash '$P/report.sh' 2>&1 | grep -qE '^(\\.|set )'"
 
 echo "# adopt"
 bash "$O/adopt.sh" feature-x --repo "$T/repo" --orchestrator tmux:parent "new assignment text" >"$T/adopt.out" 2>&1
@@ -123,6 +127,18 @@ tm rename-session -t '=shellonly' "kirby-$key-shellonly"; sleep 0.5
 check "adopt refuses shell pane" "! bash '$O/adopt.sh' shellonly --repo '$T/repo' --orchestrator tmux:other 2>/dev/null"
 check "refused adopt left the tag alone" "[ -z \"\$(tag kirby-$key-shellonly @orchestra-orchestrator)\" ] && [ \"\$(tag $S1 @orchestra-orchestrator)\" = tmux:parent ]"
 tm kill-session -t "=kirby-$key-shellonly"
+
+echo "# adopt a pane spawn.sh did not create; report.sh inside it resolves the session from TMUX"
+# The pane leader is awk (not a shell), so adopt.sh treats it as an agent; a REPORT line makes it
+# run report.sh from inside the pane, where only TMUX/TMUX_PANE identify the session.
+SA="kirby-$key-adopted"
+(unset TMUX TMUX_PANE; tm new-session -d -s "$SA" -c "$W1" -x 100 -y 20 -- awk -v P="$P" -v T="$T" '/REPORT/ { system("bash \"" P "/report.sh\" DONE \"from inside\" > \"" T "/inside.out\" 2>&1"); next } { print >> (T "/received-inside") }')
+sleep 0.5
+bash "$O/adopt.sh" adopted --repo "$T/repo" --orchestrator tmux:parent >/dev/null 2>&1; check "adopt of a foreign pane" "[ $? = 0 ] && [ \"\$(tag $SA @orchestra-orchestrator)\" = tmux:parent ]"
+bash "$O/send.sh" adopted --repo "$T/repo" --raw "REPORT" >/dev/null 2>&1; sleep 1.5
+check "report.sh inside the pane delivered" "grep -q 'sent to parent' '$T/inside.out' && grep -q '\[player adopted\] DONE: from inside' '$T/received-claude'"
+check "last-report on the adopted session" "tag $SA @orchestra-last-report | grep -Eq '^DONE $STAMP\$'"
+tm kill-session -t "=$SA"
 
 echo "# resume: dead pane, restart note only, no task replay"
 tm send-keys -t "=$S1:" C-d; sleep 0.8
