@@ -1,27 +1,26 @@
-# My Claude Code Plugins
+# Claude Code plugins
 
-Plugins I've written for myself to make [Claude Code](https://claude.ai/claude-code) fit my workflow. Feel free to use them if they solve your problems too.
+A small collection of plugins I use with Claude Code. Install whichever ones fit your workflow.
 
-## Installation
+## Install
 
-```bash
-# Add the marketplace (one-time)
+Add the marketplace once, then choose a plugin:
+
+```text
 /plugin marketplace add HermannBjorgvin/claude-plugins
-
-# Install a plugin
+/plugin install orchestra@hermannbjorgvin
 /plugin install tv-pauser@hermannbjorgvin
 ```
 
 ## Plugins
 
 | Plugin | What it does |
-|--------|--------------|
-| [tv-pauser](./tv-pauser/) | Pauses your TV when Claude needs attention, resumes when you're back to work. No more missing plot points while staring at permission prompts. |
+| --- | --- |
+| [Orchestra](./orchestra/) | Run coding agents in separate worktrees and tmux sessions, with reports sent back to one orchestrator conversation. Supports Claude Code and Codex. |
+| [TV Pauser](./tv-pauser/) | Pause your media player when Claude needs attention and resume playback when work continues. |
+
+Tested on Linux. Support for other operating systems has not been verified; see each plugin's requirements.
 
 ## License
 
 MIT
-
----
-
-**Note:** These plugins have been tested on Linux. They might work on macOS and Windows, but no promises.
