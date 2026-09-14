@@ -4,7 +4,8 @@ Real temporary git repositories; tmux, claude and codex are stateful mocks. The 
 enforces tmux's ~16 KiB command limit, exact `=name`/`=name:` targeting and remain-on-exit
 (a pane goes dead when its command exits). Run: python3 test_port.py  (SKILLS_ROOT selects
 the installation to test; default is this plugin's skills/ directory). The expected Claude
-player invocation follows the layout: /<plugin>:player under a plugin manifest, else /player.
+player invocation defaults to the Claude plugin in both layouts, with an explicit
+PLAYER_CLAUDE_SKILL override for standalone Claude installations.
 """
 import os, json, re, subprocess, tempfile, unittest
 from pathlib import Path
@@ -14,7 +15,7 @@ def player_invocation():
     if m.exists():
         found = re.search(r'"name"\s*:\s*"([^"]+)"', m.read_text())
         if found: return '/%s:player' % found.group(1)
-    return '/player'
+    return '/orchestra:player'
 INV = player_invocation()
 ID = '11111111-2222-3333-4444-555555555555'
 UUID = '0199a000-1111-7000-8000-000000000042'
@@ -114,7 +115,7 @@ class PortTests(unittest.TestCase):
         return x
     def script(self, name): return str(ROOT/('player/scripts/report.sh' if name == 'report.sh' else 'orchestrator/scripts/'+name))
     def spawn(self, *extra, ok=True, prompt=True):
-        p = ['--prompt', "Task with $orchestra:player, 'quotes', `touch BAD`, $(touch BAD), and\na newline END-OF-TASK"] if prompt else []
+        p = ['--prompt', "Task with $player, 'quotes', `touch BAD`, $(touch BAD), and\na newline END-OF-TASK"] if prompt else []
         return self.run_cmd(['bash', self.script('spawn.sh'), '--repo', str(self.repo), '--branch', 'feature/test', '--from', 'HEAD', *p, '--no-node-modules', *extra], ok=ok)
     def calls(self):
         f = self.base/'calls'
@@ -133,7 +134,7 @@ class PortTests(unittest.TestCase):
     def test_codex_spawn_prompt_and_isolation(self):
         self.spawn('--agent', 'codex'); c = self.calls()[-1]
         self.assertEqual(c['args'][:4], ['-m', 'gpt-6-astra', '-c', 'model_reasoning_effort="medium"'])
-        self.assertTrue(c['args'][-1].startswith('$orchestra:player codex:'+ID+'\n\nYour orchestrator reporting target is: codex:'+ID))
+        self.assertTrue(c['args'][-1].startswith('$player codex:'+ID+'\n\nYour orchestrator reporting target is: codex:'+ID))
         self.assertIn('$(touch BAD)', c['args'][-1]); self.assertFalse((self.wt/'BAD').exists())
         self.assertIsNone(c['env']['CODEX_THREAD_ID']); self.assertEqual(c['env']['ORCHESTRATOR_TARGET'], 'codex:'+ID)
         self.assertEqual(c['env']['TMUX_TMPDIR'], '/tmp/kirby-agent-tmux'); self.assertIsNone(c['env']['TMUX'])
@@ -142,6 +143,22 @@ class PortTests(unittest.TestCase):
         self.spawn('--agent', 'claude', '--model', 'fable', '--orchestrator', 'tmux:parent')
         c = self.calls()[-1]; self.assertEqual(c['args'][:4], ['--model', 'fable', '--effort', 'high'])
         self.assertTrue(c['args'][-1].startswith(INV+' tmux:parent'))
+    def test_standalone_claude_override_spawn_resume_and_adopt(self):
+        self.env['PLAYER_CLAUDE_SKILL'] = '/player'
+        self.spawn('--agent', 'claude')
+        self.assertTrue(self.calls()[-1]['args'][-1].startswith('/player codex:'+ID))
+        self.env['TEST_PANE_ALIVE'] = '1'
+        self.spawn('--resume', '--agent', 'claude', prompt=False)
+        self.assertTrue(self.calls()[-1]['args'][-1].startswith('/player codex:'+ID))
+        self.run_cmd(['bash', self.script('adopt.sh'), self.session,
+                      '--agent', 'claude', '--orchestrator', 'tmux:new-parent'])
+        self.assertIn('"/player tmux:new-parent"', self.tmux_log())
+    def test_claude_default_adopt_from_either_installation(self):
+        self.env['TEST_PANE_ALIVE'] = '1'
+        self.spawn('--agent', 'claude')
+        self.run_cmd(['bash', self.script('adopt.sh'), self.session,
+                      '--agent', 'claude', '--orchestrator', 'tmux:new-parent'])
+        self.assertIn('"'+INV+' tmux:new-parent"', self.tmux_log())
     def test_sol_override(self):
         self.spawn('--agent', 'codex', '--model', 'gpt-5.6-sol', '--effort', 'xhigh'); self.assertEqual(self.calls()[-1]['args'][3], 'model_reasoning_effort="xhigh"')
     def test_env_markers_stripped_config_kept(self):
@@ -183,7 +200,7 @@ class PortTests(unittest.TestCase):
         self.spawn('--agent', 'codex'); self.kill_pane()
         self.rollout('/elsewhere', uuid='0199a000-1111-7000-8000-000000000099', stamp='2026-09-13T12-00-00'); self.rollout(str(self.wt.resolve()))
         self.spawn('--resume', prompt=False); c = self.calls()[-1]
-        self.assertEqual(c['cli'], 'codex'); self.assertEqual(c['args'][:2], ['resume', UUID]); self.assertTrue(c['args'][-1].startswith('$orchestra:player codex:'+ID)); self.assertNotIn('-m', c['args'])
+        self.assertEqual(c['cli'], 'codex'); self.assertEqual(c['args'][:2], ['resume', UUID]); self.assertTrue(c['args'][-1].startswith('$player codex:'+ID)); self.assertNotIn('-m', c['args'])
         self.spawn('--resume', '--model', 'gpt-5.6-sol', '--effort', 'high', prompt=False)
         self.assertEqual(self.calls()[-1]['args'][:6], ['resume', '-m', 'gpt-5.6-sol', '-c', 'model_reasoning_effort="high"', UUID])
     def test_resume_codex_without_conversation_refuses(self):
@@ -251,9 +268,9 @@ class PortTests(unittest.TestCase):
     def test_adopt_codex_player_with_and_without_text(self):
         self.env['TEST_PANE_ALIVE'] = '1'; self.spawn('--agent', 'codex')
         self.run_cmd(['bash', self.script('adopt.sh'), self.session, '--orchestrator', 'tmux:new-parent'])
-        self.assertIn('"$orchestra:player tmux:new-parent"', self.tmux_log()); self.assertEqual((self.gitdir()/'player-orchestrator').read_text(), 'tmux:new-parent\n/tmp/test-socket\n')
+        self.assertIn('"$player tmux:new-parent"', self.tmux_log()); self.assertEqual((self.gitdir()/'player-orchestrator').read_text(), 'tmux:new-parent\n/tmp/test-socket\n')
         self.run_cmd(['bash', self.script('adopt.sh'), 'feature-test', '--repo', str(self.repo), '--orchestrator', 'tmux:new-parent', 'Now', 'do', 'this'])
-        self.assertIn('"$orchestra:player tmux:new-parent Now do this"', self.tmux_log())
+        self.assertIn('"$player tmux:new-parent Now do this"', self.tmux_log())
     def test_adopt_refuses_dead_or_shell_pane(self):
         self.spawn('--agent', 'claude')          # mock CLI exits, so the pane is dead
         x = self.run_cmd(['bash', self.script('adopt.sh'), self.session, '--orchestrator', 'tmux:p'], ok=False); self.assertIn('dead', x.stderr)

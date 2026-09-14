@@ -1,7 +1,7 @@
 # Agent Plugin Marketplace
 
-This monorepo publishes Claude Code and Codex plugins through one shared
-`.claude-plugin/marketplace.json` catalog.
+This monorepo distributes Claude Code plugins through `.claude-plugin/marketplace.json`
+and shared Orchestra skills to Codex and other agents through Vercel's skills CLI.
 
 ## Structure
 
@@ -19,11 +19,8 @@ orchestra/              # Plugin: Orchestra (orchestrator + player skills)
   .claude-plugin/
     plugin.json
   skills/
-    orchestrator/       # /orchestra:orchestrator + scripts/ (spawn, sessions, send, adopt, …)
-    player/             # /orchestra:player + scripts/report.sh
-  .codex-plugin/
-    plugin.json         # Loads the Codex entrypoints
-  codex/                # Codex skill instructions and metadata
+    orchestrator/       # Shared SKILL.md, scripts/, agents/openai.yaml
+    player/             # Shared SKILL.md, scripts/, agents/openai.yaml
   tests/                # Mock-tmux unit tests and real-tmux smoke test (fake CLIs)
 ```
 
@@ -60,10 +57,11 @@ Commit and push. Users install via:
 /plugin install tv-pauser@hermannbjorgvin
 ```
 
-Codex users install from the same catalog:
+Codex and other agents install both shared skills through Vercel's skills CLI.
+Recommend global installation for Codex so fresh player worktrees discover them:
+
 ```bash
-codex plugin marketplace add HermannBjorgvin/agent-plugins
-codex plugin add orchestra@hermannbjorgvin
+npx skills@latest add HermannBjorgvin/agent-plugins --global --agent codex --skill orchestrator player
 ```
 
 Start a new session after installation. TV Pauser supports Claude Code only.
@@ -72,9 +70,12 @@ Start a new session after installation. TV Pauser supports Claude Code only.
 
 Two cooperating skills: the orchestrator spawns players (one tmux session + git worktree +
 branch each) and the player reports back through `skills/player/scripts/report.sh`. The
-scripts resolve each other relative to their real location. Codex entrypoints reference
-the same scripts relative to their installed SKILL.md location. Session names (`kirby-<key>-<branch>`) and worktree locations
-(`.claude/worktrees/`) are shared with Kirby; do not change them.
+scripts resolve each other relative to their real location, including installer symlinks.
+Keep both skills as siblings and install them together. Maintain one shared SKILL.md
+per skill, with Claude-specific invocation and path guidance clearly labeled and Codex
+metadata in agents/openai.yaml. Do not create client-specific copies of the instructions.
+Session names (`kirby-<key>-<branch>`) and worktree locations (`.claude/worktrees/`)
+are shared with Kirby; do not change them.
 
 Tests (no model calls, isolated tmux socket):
 ```bash

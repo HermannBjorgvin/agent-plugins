@@ -5,11 +5,11 @@
 #
 # Usage: smoke_tmux.sh [skills-root]   default: this plugin's skills/ directory. The root may
 # also be a personal installation (~/.claude/skills); the expected Claude player invocation
-# follows the layout (/<plugin>:player under a plugin manifest, /player otherwise).
+# defaults to the plugin namespace in both layouts.
 set -u
 ROOT="${1:-$(dirname "$(realpath "$0")")/../skills}"
 O="$ROOT/orchestrator/scripts"; P="$ROOT/player/scripts"
-INV=/player
+INV=/orchestra:player
 [ -f "$ROOT/../.claude-plugin/plugin.json" ] && INV="/$(sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$ROOT/../.claude-plugin/plugin.json" | head -n1):player"
 T="$(mktemp -d /tmp/orch-smoke.XXXXXX)"; SOCK="$T/tmux.sock"
 pass=0; fail=0
@@ -36,7 +36,7 @@ export PATH="$T/bin:$PATH"
 export CLAUDECODE=1 CLAUDE_CODE_CHILD_SESSION=1 CODEX_THREAD_ID=11111111-2222-3333-4444-555555555555
 export CLAUDE_CONFIG_DIR="$T/claude-config" ANTHROPIC_API_KEY=fake-key CODEX_HOME="$T/codex-home"
 export ORCHESTRATOR_MAIL_DIR="$T/mail"
-unset ORCHESTRATOR_TARGET ORCHESTRATOR_SESSION ORCHESTRATOR_THREAD_ID PLAYER_NAME
+unset ORCHESTRATOR_TARGET ORCHESTRATOR_SESSION ORCHESTRATOR_THREAD_ID PLAYER_NAME PLAYER_CLAUDE_SKILL
 
 # Temporary repository and an orchestrator session on the scratch server.
 git init -q "$T/repo"; git -C "$T/repo" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m init
@@ -127,7 +127,7 @@ printf '{"type":"session_meta","payload":{"id":"%s","cwd":"/elsewhere"}}\n' 0199
 bash "$O/spawn.sh" --repo "$T/repo" --branch feature/x --resume >"$T/auto.out" 2>&1
 sleep 2.5
 [ -n "${SMOKE_DEBUG:-}" ] && { echo "--- auto.out ---"; cat "$T/auto.out"; echo "--- screen ---"; bash "$O/screen.sh" "$S1" --lines 12 | cut -c1-160; echo "--- last-call ---"; cat "$T/last-call" 2>/dev/null | head -5; }
-check "codex resume with worktree uuid and prompt" "grep -q '^cli=codex' '$T/last-call' && grep -q '^arg=resume' '$T/last-call' && grep -q \"^arg=$uuid\" '$T/last-call' && grep -q '^arg=\$orchestra:player tmux:parent' '$T/last-call'"
+check "codex resume with worktree uuid and prompt" "grep -q '^cli=codex' '$T/last-call' && grep -q '^arg=resume' '$T/last-call' && grep -q \"^arg=$uuid\" '$T/last-call' && grep -q '^arg=\$player tmux:parent' '$T/last-call'"
 check "codex harness recorded" "[ \"\$(cat \"\$(git -C '$W1' rev-parse --absolute-git-dir)/player-agent\")\" = codex ]"
 rm -f "$T/fake-claude-noconv"
 

@@ -14,9 +14,21 @@ Codex CLI players from a Claude/tmux or Codex desktop/CLI orchestrator on the sa
 
 ## Start
 
-Run `${CLAUDE_SKILL_DIR}/scripts/sessions.sh --all`. Every script below lives in
-`${CLAUDE_SKILL_DIR}/scripts/`; invoke that exact path so the allowlist matches. Run the
-scripts; do not reimplement them. Read repo `AGENTS.md`, `CLAUDE.md`, and applicable parent docs.
+Both `orchestrator` and `player` must be installed together. Invoke this skill
+explicitly: `/orchestra:orchestrator` from the Claude plugin, `$orchestrator` in
+Codex, or the installed skill name in another agent.
+
+Resolve script paths for the current agent:
+
+- **Claude Code:** use `${CLAUDE_SKILL_DIR}/scripts/` exactly, with no `bash`
+  prefix, so commands match the skill's tool allowlist.
+- **Codex and other agents:** resolve `scripts/` relative to this installed
+  `SKILL.md`. Invoke scripts with `bash` and their absolute paths. Do not treat
+  `${CLAUDE_SKILL_DIR}` as an environment variable in these agents.
+
+Start with `sessions.sh --all` using the path above. Every script name below is
+shorthand for that resolved script path. Run the scripts; do not reimplement
+them. Read repo `AGENTS.md`, `CLAUDE.md`, and applicable parent docs.
 
 - One session = one branch = one PR in one repo. Group related backlog items; avoid overlapping work.
 - Spawn players for branch-to-PR tasks. Handle reviews, investigations and operational work
@@ -75,7 +87,11 @@ the original choice must be guaranteed. Do not silently substitute a model.
    do not modify repo guidance just to encode a one-off task. Any length is fine: the task
    travels through a file, not the tmux command line.
 3. Spawn. The generated prompt is the player invocation (`/orchestra:player <target>` for
-   Claude from this plugin, `$orchestra:player <target>` for Codex), the reporting target, then the task.
+   Claude from this plugin, `/player <target>` for standalone Claude skills,
+   `$player <target>` for Codex), the reporting target, then the task.
+   Claude defaults to the plugin invocation regardless of the orchestrator's agent.
+   For standalone Claude players, set `PLAYER_CLAUDE_SKILL=/player` when running
+   `spawn.sh` or `adopt.sh`.
    ```
    spawn.sh --repo PATH --branch feature/name --prompt-file FILE --agent codex
    spawn.sh --repo PATH --branch feature/name --prompt-file FILE --agent claude --model fable --effort high

@@ -97,19 +97,22 @@ paste_into() {
   tmux "$@" send-keys -t "$(tmux_target "$session")" Enter
 }
 
-# Where these scripts really live: entry points reached through a symlink (the Codex
-# installation links here) resolve to the same files, so the sibling player skill is found
-# next to this one in every layout. Both skills install together.
+# Resolve links created by skills installers before finding the sibling player skill.
+# Both skills must be installed together under the same skills directory.
 ORCH_SCRIPTS="$(dirname "$(realpath "$0")")"
 PLAYER_SCRIPTS="$ORCH_SCRIPTS/../../player/scripts"
 [ -f "$PLAYER_SCRIPTS/_routing.sh" ] || { echo "orchestrator: the player skill's scripts are missing at $PLAYER_SCRIPTS (install both skills)" >&2; exit 1; }
 . "$PLAYER_SCRIPTS/_routing.sh"
 
-# The Claude skill that turns a pane into a player: /<plugin>:player when these scripts run
-# from a Claude Code plugin (skills/*/scripts under a .claude-plugin manifest), /player for a
-# personal skill. Codex players are always activated with the $orchestra:player mention.
+# Claude players use the recommended plugin installation even when their orchestrator
+# was installed as standalone skills. Override for standalone Claude with
+# PLAYER_CLAUDE_SKILL=/player. Codex players always use the $player mention.
 claude_player_invocation() {
+  if [ -n "${PLAYER_CLAUDE_SKILL:-}" ]; then
+    printf '%s' "$PLAYER_CLAUDE_SKILL"
+    return
+  fi
   local manifest="$ORCH_SCRIPTS/../../../.claude-plugin/plugin.json" name=""
   [ -f "$manifest" ] && name="$(sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$manifest" | head -n1)"
-  if [ -n "$name" ]; then printf '/%s:player' "$name"; else printf '/player'; fi
+  printf '/%s:player' "${name:-orchestra}"
 }
