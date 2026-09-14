@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# List player tmux sessions with a cheap, harness-neutral state.
+# List player tmux sessions with a cheap, harness-neutral state and the session's tags.
 #
 #   busy   the pane wrote output within the last QUIET seconds
 #   idle   quiet for QUIET+ seconds: at a prompt, asking a question, or finished
@@ -8,6 +8,12 @@
 # Scope: players of one repo (--repo <path>, else the cwd's repo) when the cwd is inside
 # a git repo; every player on the machine (--all) otherwise. --all adds a REPO column and
 # prints full session names, which every other script accepts.
+#
+# AGENT, ORCHESTRATOR and LAST-REPORT come from the session's @orchestra-agent,
+# @orchestra-orchestrator and @orchestra-last-report tags (empty when unset); REPO prefers
+# @orchestra-repo and falls back to the pane's path. --json adds "agent", "orchestrator",
+# "last_report", "repo" and "branch" (@orchestra-branch) fields. Everything comes from one
+# tmux list-panes call.
 #
 # QUIET is seconds since the pane last produced output (tmux window_activity), so one
 # tmux call covers every session. It cannot say *why* a session is idle — use screen.sh
@@ -24,7 +30,7 @@ QUIET=3
 ALL=0; SAMPLE=0; JSON=0
 while [ $# -gt 0 ]; do case "$1" in
   --all) ALL=1;; --repo) ORCH_REPO="$2"; shift;; --quiet) QUIET="$2"; shift;; --sample) SAMPLE="$2"; shift;; --json) JSON=1;;
-  -h|--help) sed -n '2,18p' "$0"; exit 0;;
+  -h|--help) sed -n '2,24p' "$0"; exit 0;;
   *) echo "sessions.sh: unknown argument $1" >&2; exit 0;; esac; shift; done
 command -v tmux >/dev/null || { echo "tmux is not installed"; exit 0; }
 
@@ -37,9 +43,21 @@ if [ "$SAMPLE" -gt 0 ]; then
   sleep "$SAMPLE"
 fi
 
+# Fields are tab-separated (tag values never contain a tab; the title comes last so it may). A
+# whitespace IFS makes `read` collapse the empty fields of unset tags, so lines are split by hand.
+TAB=$'\t'
+FORMAT="#{session_name}${TAB}#{pane_dead}${TAB}#{pane_current_command}${TAB}#{window_activity}${TAB}#{pane_current_path}${TAB}#{$TAG_AGENT}${TAB}#{$TAG_ORCHESTRATOR}${TAB}#{$TAG_LAST_REPORT}${TAB}#{$TAG_REPO}${TAB}#{$TAG_BRANCH}${TAB}#{pane_title}"
+split_tabs() {
+  local line="$1"; F=()
+  while case "$line" in *"$TAB"*) true;; *) false;; esac; do F+=("${line%%"$TAB"*}"); line="${line#*"$TAB"}"; done
+  F+=("$line")
+}
+json_str() { printf %s "$1" | jq -Rs .; }
 now=$(date +%s); rows=0; first=1
 [ $JSON = 1 ] && printf '['
-while IFS='|' read -r name dead cmd activity path title; do
+while IFS= read -r line; do
+  split_tabs "$line"; set -- "${F[@]}"
+  name="${1:-}"; dead="${2:-}"; cmd="${3:-}"; activity="${4:-}"; path="${5:-}"; agent="${6:-}"; orch="${7:-}"; last="${8:-}"; tag_repo="${9:-}"; branch="${10:-}"; title="${11:-}"
   rows=$((rows+1))
   quiet=$(( now - ${activity:-$now} )); [ $quiet -lt 0 ] && quiet=0
   if [ "${dead:-1}" = 1 ]; then state=dead
@@ -47,19 +65,19 @@ while IFS='|' read -r name dead cmd activity path title; do
     if [ "${before[$name]:-}" != "$(screen_text "$name" | md5sum)" ]; then state=busy; else state=idle; fi
   elif [ $quiet -lt "$QUIET" ]; then state=busy
   else state=idle; fi
-  short="${name#$prefix}"; repo="$(repo_of_path "$path")"
+  short="${name#"$prefix"}"; repo="${tag_repo:-$(repo_of_path "$path")}"
   if [ $JSON = 1 ]; then
     [ $first = 1 ] || printf ','; first=0
-    printf '{"session":"%s","tmux":"%s","repo":%s,"state":"%s","cmd":"%s","quiet_s":%s,"title":%s}' \
-      "$short" "$name" "$(printf %s "$repo" | jq -Rs .)" "$state" "$cmd" "$quiet" "$(printf %s "$title" | jq -Rs .)"
+    printf '{"session":"%s","tmux":"%s","repo":%s,"branch":%s,"state":"%s","cmd":"%s","quiet_s":%s,"agent":%s,"orchestrator":%s,"last_report":%s,"title":%s}' \
+      "$short" "$name" "$(json_str "$repo")" "$(json_str "$branch")" "$state" "$cmd" "$quiet" "$(json_str "$agent")" "$(json_str "$orch")" "$(json_str "$last")" "$(json_str "$title")"
   elif [ $ALL = 1 ]; then
-    [ $rows = 1 ] && printf '%-5s %6s  %-40s %-62s %-9s %s\n' STATE QUIET REPO SESSION CMD TITLE
-    printf '%-5s %5ss  %-40s %-62s %-9s %s\n' "$state" "$quiet" "$(printf %s "$repo" | cut -c1-40)" "$short" "$cmd" "$(printf %s "$title" | cut -c1-50)"
+    [ $rows = 1 ] && printf '%-5s %6s  %-32s %-52s %-8s %-42s %-26s %s\n' STATE QUIET REPO SESSION AGENT ORCHESTRATOR LAST-REPORT TITLE
+    printf '%-5s %5ss  %-32s %-52s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$(printf %s "${repo/#$HOME\//}" | cut -c1-32)" "$short" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"
   else
-    [ $rows = 1 ] && printf '%-5s %6s  %-44s %-9s %s\n' STATE QUIET SESSION CMD TITLE
-    printf '%-5s %5ss  %-44s %-9s %s\n' "$state" "$quiet" "$short" "$cmd" "$(printf %s "$title" | cut -c1-60)"
+    [ $rows = 1 ] && printf '%-5s %6s  %-40s %-8s %-42s %-26s %s\n' STATE QUIET SESSION AGENT ORCHESTRATOR LAST-REPORT TITLE
+    printf '%-5s %5ss  %-40s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$short" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"
   fi
-done < <(tmux list-panes -a -F '#{session_name}|#{pane_dead}|#{pane_current_command}|#{window_activity}|#{pane_current_path}|#{pane_title}' 2>/dev/null | grep -E "$pattern" || true)
+done < <(tmux_on "" list-panes -a -F "$FORMAT" 2>/dev/null | grep -E "$pattern" || true)
 [ $JSON = 1 ] && printf ']\n'
 if [ $rows = 0 ] && [ $JSON = 0 ]; then
   if [ $ALL = 1 ]; then echo "no player sessions on this machine"; else echo "no sessions with prefix $prefix (repo $(repo_root)); --all lists every repo's"; fi

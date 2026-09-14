@@ -1,10 +1,71 @@
-# Shared routing for Claude and Codex orchestrators. Never infer a parent from a player's own ID.
+# Shared by the orchestrator scripts, the launcher and report.sh. Harness-neutral: bash + tmux
+# + coreutils only. Owns the names of the tmux session user options ("tags") and the exact
+# targeting rules; every other script reads the names from here.
+
+# --- Session user options: the contract shared with Kirby ------------------------------------
+# Every fact about a player session lives on the session itself, as a user option that dies with
+# the session and is readable by anyone who can reach the server: no files. Set with
+# `set-option -t '=name:' @orchestra-agent claude`; read with `show-options -qv` (empty when unset)
+# or as #{@orchestra-agent} in a format. Absent means unset; no sentinels. Values never contain a
+# tab; only @orchestra-undelivered contains newlines.
+TAG_SPAWNER=@orchestra-spawner            # kirby | orchestra: whichever program created the session
+TAG_REPO=@orchestra-repo                  # main checkout, absolute and symlink-resolved (Kirby's projectKey input)
+TAG_BRANCH=@orchestra-branch              # branch the session was spawned under, unsanitized (feature/x)
+TAG_ORCHESTRATOR=@orchestra-orchestrator  # reporting target: codex:<uuid> | tmux:<session>
+TAG_AGENT=@orchestra-agent                # claude | codex | gemini | copilot | opencode | custom
+TAG_LAUNCHING=@orchestra-launching        # 1 while the placeholder pane exists; unset once the harness started
+TAG_LAST_REPORT=@orchestra-last-report    # "<KIND> <ISO-8601 UTC>" of the last report a transport accepted
+TAG_UNDELIVERED=@orchestra-undelivered    # "<ISO-8601 UTC> <message>" lines, oldest first, kept under UNDELIVERED_MAX bytes
+UNDELIVERED_MAX=8192                      # tmux rejects command lines around 16 KiB; the value travels on one
+
+# Exact tmux targeting. `=name` is exact for has-session, but pane/window commands (send-keys,
+# display-message, respawn-pane, set-option, capture-pane) reject it; `=name:` is exact for all.
+tmux_target() { printf '=%s:' "$1"; }
+
+# tmux sanitizes what it prints unless the client is in UTF-8 mode, which it infers from the names
+# of LC_ALL/LC_CTYPE/LANG: outside a UTF-8 locale every control character (the tabs between
+# listing fields, the newlines separating @orchestra-undelivered entries) comes back as "_" and
+# non-ASCII as "_". `tmux -u` forces UTF-8 output whatever the locale, so every call goes through it.
+# tmux_on <socket> <args…>: tmux on one server. An empty socket means the current server (the
+# one $TMUX names, else the default); a path is passed as -S so a process whose tmux environment
+# is redirected (every player pane) still reaches the server that holds its session.
+tmux_on() {
+  local sock="$1"; shift
+  if [ -n "$sock" ]; then tmux -u -S "$sock" "$@"; else tmux -u "$@"; fi
+}
+# tag_get <socket> <session> <tag>: the value, empty when unset or unreachable; never fails.
+tag_get()   { tmux_on "$1" show-options -qv -t "$(tmux_target "$2")" "$3" 2>/dev/null || :; }
+tag_set()   { tmux_on "$1" set-option -t "$(tmux_target "$2")" "$3" "$4"; }
+tag_unset() { tmux_on "$1" set-option -u -t "$(tmux_target "$2")" "$3"; }
+
+# Byte length, whatever the locale (tmux's limit is in bytes).
+byte_length() { printf '%s' "$1" | wc -c | tr -d ' '; }
+# record_undelivered <socket> <session> <message>: append "<ISO-8601 UTC> <message>" to
+# @orchestra-undelivered, oldest first. The message is flattened to one line (tabs and newlines
+# become spaces) so the value stays line-parseable; the oldest lines are dropped while the value
+# would reach UNDELIVERED_MAX, and a single oversized line is cut.
+record_undelivered() {
+  local sock="$1" session="$2" line value
+  line="$(date -u +%Y-%m-%dT%H:%M:%SZ) $(printf '%s' "$3" | tr '\n\t' '  ')"
+  value="$(tag_get "$sock" "$session" "$TAG_UNDELIVERED")"
+  value="${value:+$value$'\n'}$line"
+  while [ "$(byte_length "$value")" -ge "$UNDELIVERED_MAX" ]; do
+    case "$value" in
+      *$'\n'*) value="${value#*$'\n'}";;
+      *) value="$(printf '%s' "$value" | head -c $((UNDELIVERED_MAX - 64))) [cut]"; break;;
+    esac
+  done
+  tag_set "$sock" "$session" "$TAG_UNDELIVERED" "$value"
+}
+
+# --- Reporting targets -----------------------------------------------------------------------
+# codex:<thread-id> or tmux:<session>; nothing else. Never infer a parent from a player's own ID.
 # tmux session names: tmux itself rewrites "." and ":" but otherwise allows most characters.
 normalize_target() {
   case "$1" in
     codex:*) [[ "${1#codex:}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || { echo "invalid Codex thread ID: ${1#codex:}" >&2; return 2; };;
     tmux:*) [[ -n "${1#tmux:}" && ! "${1#tmux:}" =~ [:[:cntrl:]] ]] || { echo "invalid tmux session name: ${1#tmux:}" >&2; return 2; };;
-    *) normalize_target "tmux:$1"; return;;
+    *) echo "invalid orchestrator target: $1 (use codex:<thread-id> or tmux:<session>)" >&2; return 2;;
   esac
   printf '%s' "$1"
 }
@@ -23,10 +84,7 @@ resolve_orchestrator() {
   fi
 }
 
-# Exact tmux targeting. `=name` is exact for has-session, but pane/window commands (send-keys,
-# display-message, respawn-pane, set-option, capture-pane) reject it; `=name:` is exact for all.
-tmux_target() { printf '=%s:' "$1"; }
-
+# --- Pane ownership --------------------------------------------------------------------------
 # Is an agent reading that pane, or would typed text land in a shell? `pane_current_command`
 # reports the pane's process leader, which stays `bash`/`sh` when the agent runs under a wrapper
 # shell (spawn.sh launches every player that way), so inspect the process tree: only a known agent
@@ -48,16 +106,15 @@ pane_has_agent() {
   done
   return 1
 }
-# pane_owned_by_agent <tmux-cmd-prefix...> <session>: true when the session's pane is alive and an
-# agent (not a shell) is at the terminal. The prefix lets callers pick a socket (tmux -S PATH).
+# pane_owned_by_agent <socket> <session>: true when the session's pane is alive and an agent (not a
+# shell) is at the terminal. The socket selects the server as in tmux_on.
 pane_owned_by_agent() {
-  local session="${@: -1}" cmd pid
-  set -- "${@:1:$#-1}"
-  [ "$("$@" display-message -p -t "$(tmux_target "$session")" '#{pane_dead}' 2>/dev/null)" = 0 ] || return 1
-  cmd="$("$@" display-message -p -t "$(tmux_target "$session")" '#{pane_current_command}' 2>/dev/null)"
+  local sock="$1" session="$2" cmd pid
+  [ "$(tmux_on "$sock" display-message -p -t "$(tmux_target "$session")" '#{pane_dead}' 2>/dev/null)" = 0 ] || return 1
+  cmd="$(tmux_on "$sock" display-message -p -t "$(tmux_target "$session")" '#{pane_current_command}' 2>/dev/null)"
   case "$cmd" in
     sh|bash|zsh|fish|dash|"")
-      pid="$("$@" display-message -p -t "$(tmux_target "$session")" '#{pane_pid}' 2>/dev/null)"
+      pid="$(tmux_on "$sock" display-message -p -t "$(tmux_target "$session")" '#{pane_pid}' 2>/dev/null)"
       pane_has_agent "$pid";;
     *) return 0;;
   esac

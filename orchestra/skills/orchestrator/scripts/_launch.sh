@@ -1,36 +1,49 @@
 #!/usr/bin/env bash
-# Runs inside the player's pane (started by spawn.sh): builds the prompt from the persisted task
-# body and starts or resumes the harness. Everything arrives through the environment, so no
-# prompt text ever passes through a tmux or shell command line.
+# Runs inside the player's pane (started by spawn.sh): reads the task body from the session's
+# paste buffer and starts or resumes the harness. Options arrive through the environment, so no
+# prompt text ever passes through a tmux or shell command line. Environment (all injected by
+# spawn.sh through respawn-pane -e):
 #
-#   PLAYER_MODE         fresh | resume
-#   PLAYER_HARNESS      claude | codex | gemini | copilot | opencode | custom | auto (resume only)
-#   PLAYER_MODEL, PLAYER_EFFORT, PLAYER_PERM   empty = not given (resume: CLI settings apply)
-#   PLAYER_CMD          custom harness command; receives the composed prompt as $PROMPT
-#   PLAYER_PROMPT_FILE  task body written by spawn.sh
-#   PLAYER_CLAUDE_SKILL Claude player invocation (defaults to /orchestra:player)
-#   ORCHESTRATOR_TARGET reporting destination named in the preamble
+#   ORCHESTRA_SESSION      this player's tmux session name (kirby-<key>-<branch>)
+#   ORCHESTRA_SOCKET       socket of the tmux server holding it (the pane's own tmux environment
+#                          is redirected to a scratch server, so every call passes -S)
+#   ORCHESTRA_PLAYER       short player name (session name minus the kirby-<key>- prefix)
+#   ORCHESTRA_MODE         fresh | resume
+#   ORCHESTRA_HARNESS      claude | codex | gemini | copilot | opencode | custom | auto (resume only)
+#   ORCHESTRA_MODEL, ORCHESTRA_EFFORT, ORCHESTRA_PERMISSION_MODE   empty = not given
+#   ORCHESTRA_COMMAND      custom harness command; receives the composed prompt as $PROMPT
+#   ORCHESTRA_CLAUDE_SKILL Claude player invocation (defaults to /orchestra:player)
+#
+# The task body is the paste buffer orchestra-prompt-<session>, deleted once read. The harness
+# that actually starts is recorded in the session's @orchestra-agent tag. The orchestrator target
+# is not part of the prompt: report.sh reads @orchestra-orchestrator from the session.
 #
 # Resume never starts a fresh conversation: a harness that cannot find one exits nonzero and the
 # pane stays for inspection (spawn.sh sets remain-on-exit). In auto mode Claude runs first under
 # script(1) so its output can be checked for the exact "No conversation found to continue"
 # diagnostic; only then is Codex tried, with the newest recorded conversation for this worktree.
 set -u
-mode="${PLAYER_MODE:-fresh}"; harness="${PLAYER_HARNESS:-claude}"
-model="${PLAYER_MODEL:-}"; effort="${PLAYER_EFFORT:-}"; perm="${PLAYER_PERM:-}"
-orch="${ORCHESTRATOR_TARGET:?ORCHESTRATOR_TARGET is required}"
-body="$(cat "${PLAYER_PROMPT_FILE:?PLAYER_PROMPT_FILE is required}")" || exit 1
-gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null || true)"
+. "$(dirname "$(realpath "$0")")/_lib.sh"
+mode="${ORCHESTRA_MODE:-fresh}"; harness="${ORCHESTRA_HARNESS:-claude}"
+model="${ORCHESTRA_MODEL:-}"; effort="${ORCHESTRA_EFFORT:-}"; perm="${ORCHESTRA_PERMISSION_MODE:-}"
+session="${ORCHESTRA_SESSION:?ORCHESTRA_SESSION is required}"; sock="${ORCHESTRA_SOCKET:?ORCHESTRA_SOCKET is required}"
 NO_CONVERSATION='No conversation found to continue'
+RESTART_NOTE='Your session was restarted in this worktree; files and commits are intact, so do not redo finished work.'
 
 fail() { echo "player launch: $*" >&2; exit 1; }
-remember() { [ -n "$gitdir" ] && printf '%s\n' "$1" > "$gitdir/player-agent" 2>/dev/null; true; }
+buf="$(prompt_buffer_name "$session")"
+# show-buffer writes the bytes as they are; the command substitution drops the trailing newline
+# spawn.sh adds (tmux never creates an empty buffer, and an empty body is allowed).
+body="$(tmux -S "$sock" show-buffer -b "$buf" 2>/dev/null)" || fail "no task buffer $buf on $sock (rerun spawn.sh)"
+tmux -S "$sock" delete-buffer -b "$buf" 2>/dev/null
+remember() { tag_set "$sock" "$session" "$TAG_AGENT" "$1" 2>/dev/null; true; }
+# <invocation> [restart note] <body>
 preamble() {
-  local inv; case "$1" in codex) inv='$player';; *) inv="${PLAYER_CLAUDE_SKILL:-/orchestra:player}";; esac
+  local inv; case "$1" in codex) inv='$player';; *) inv="${ORCHESTRA_CLAUDE_SKILL:-/orchestra:player}";; esac
   if [ "$mode" = resume ]; then
-    printf '%s %s\n\nYour orchestrator reporting target is: %s. Your session was restarted in this worktree; files and commits are intact, so do not redo finished work.\n\n%s' "$inv" "$orch" "$orch" "$body"
+    printf '%s %s%s' "$inv" "$RESTART_NOTE" "${body:+$'\n\n'$body}"
   else
-    printf '%s %s\n\nYour orchestrator reporting target is: %s\n\n%s' "$inv" "$orch" "$orch" "$body"
+    printf '%s%s' "$inv" "${body:+ $body}"
   fi
 }
 codex_effort_args() { [ -n "$effort" ] && printf '%s\n' -c "model_reasoning_effort=\"$effort\""; true; }
@@ -79,8 +92,8 @@ resume_auto() {
   # The prompt and options travel in the environment; the sh -c string contains no user text.
   # script(1) runs the command through $SHELL: pin /bin/sh so a login shell's rc files cannot
   # reorder PATH or otherwise change which claude binary starts.
-  PLAYER_FULL_PROMPT="$(preamble claude)" SHELL=/bin/sh script -qefc \
-    'exec claude --continue ${PLAYER_PERM:+--permission-mode "$PLAYER_PERM"} ${PLAYER_MODEL:+--model "$PLAYER_MODEL"} ${PLAYER_EFFORT:+--effort "$PLAYER_EFFORT"} "$PLAYER_FULL_PROMPT"' "$log"
+  PROMPT="$(preamble claude)" SHELL=/bin/sh script -qefc \
+    'exec claude --continue ${ORCHESTRA_PERMISSION_MODE:+--permission-mode "$ORCHESTRA_PERMISSION_MODE"} ${ORCHESTRA_MODEL:+--model "$ORCHESTRA_MODEL"} ${ORCHESTRA_EFFORT:+--effort "$ORCHESTRA_EFFORT"} "$PROMPT"' "$log"
   rc=$?
   if [ $rc -ne 0 ] && grep -aq "$NO_CONVERSATION" "$log"; then
     rm -f "$log"
@@ -93,8 +106,8 @@ resume_auto() {
 }
 
 if [ "$harness" = custom ]; then
-  PROMPT="$(preamble claude)"; export PROMPT
-  exec bash -c "${PLAYER_CMD:?PLAYER_CMD is required for the custom harness}"
+  PROMPT="$(preamble claude)"; export PROMPT; remember custom
+  exec bash -c "${ORCHESTRA_COMMAND:?ORCHESTRA_COMMAND is required for the custom harness}"
 fi
 if [ "$mode" = fresh ]; then fresh "$harness"; fi
 case "$harness" in

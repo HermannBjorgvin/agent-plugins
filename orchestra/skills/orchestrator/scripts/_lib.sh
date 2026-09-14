@@ -1,4 +1,5 @@
-# Shared helpers for the orchestrator scripts. Harness-neutral: git + tmux + coreutils only.
+# Shared helpers for the orchestrator scripts and the launcher. Harness-neutral: git + tmux +
+# coreutils only. Tag names and tmux targeting come from the player skill's _routing.sh.
 set -u
 
 # The repo a script acts on: --repo <path> (parsed by each script into ORCH_REPO) or the
@@ -104,12 +105,17 @@ PLAYER_SCRIPTS="$ORCH_SCRIPTS/../../player/scripts"
 [ -f "$PLAYER_SCRIPTS/_routing.sh" ] || { echo "orchestrator: the player skill's scripts are missing at $PLAYER_SCRIPTS (install both skills)" >&2; exit 1; }
 . "$PLAYER_SCRIPTS/_routing.sh"
 
+# The task body travels from spawn.sh to the launcher inside the pane as a paste buffer on the
+# same server (loaded from stdin, so it is not subject to the ~16 KiB command-line cap), never
+# as a file. One buffer per session, named after it.
+prompt_buffer_name() { printf 'orchestra-prompt-%s' "$1"; }
+
 # Claude players use the recommended plugin installation even when their orchestrator
 # was installed as standalone skills. Override for standalone Claude with
-# PLAYER_CLAUDE_SKILL=/player. Codex players always use the $player mention.
+# ORCHESTRA_CLAUDE_SKILL=/player. Codex players always use the $player mention.
 claude_player_invocation() {
-  if [ -n "${PLAYER_CLAUDE_SKILL:-}" ]; then
-    printf '%s' "$PLAYER_CLAUDE_SKILL"
+  if [ -n "${ORCHESTRA_CLAUDE_SKILL:-}" ]; then
+    printf '%s' "$ORCHESTRA_CLAUDE_SKILL"
     return
   fi
   local manifest="$ORCH_SCRIPTS/../../../.claude-plugin/plugin.json" name=""
