@@ -32,7 +32,7 @@ import os, sys, json, re, subprocess
 from pathlib import Path
 b = Path(os.environ['ORCH_TEST_TMP']); a = sys.argv[1:]
 with (b/'tmux-log').open('a') as f: f.write(json.dumps(a)+'\n')
-if a[:1] == ['-S']: a = a[2:]
+while a[:1] in (['-u'], ['-S']): a = a[1:] if a[0] == '-u' else a[2:]     # -u: UTF-8 output; -S: server socket
 state_file = b/'tmux-state.json'; buffers_file = b/'tmux-buffers.json'
 def load():
     return (json.loads(state_file.read_text()) if state_file.exists() else {},
@@ -167,7 +167,8 @@ class PortTests(unittest.TestCase):
     def drop_tag(self, name):
         s = self.state(); s[self.session]['options'].pop(name, None); self.set_state(s)
     # Environment of a process inside the player's pane: what spawn.sh injects through respawn-pane -e.
-    def player_env(self, **extra): return dict(self.env, ORCHESTRA_SESSION=self.session, ORCHESTRA_SOCKET=self.sock, ORCHESTRA_PLAYER='feature-test', **extra)
+    def player_env(self, **extra):
+        env = dict(self.env, ORCHESTRA_SESSION=self.session, ORCHESTRA_SOCKET=self.sock, ORCHESTRA_PLAYER='feature-test'); env.update(extra); return env
     def report(self, *args, ok=True, cwd=None, env=None): return self.run_cmd(['bash', self.script('report.sh'), *args], ok=ok, cwd=cwd or self.wt, env=env or self.player_env())
     def gitdir(self): return Path(self.run_cmd(['git', 'rev-parse', '--absolute-git-dir'], cwd=self.wt).stdout.strip())
     def rollout(self, cwd, uuid=UUID, stamp='2026-09-13T10-00-00'):
@@ -370,10 +371,10 @@ class PortTests(unittest.TestCase):
         self.assertIn('shell owns', x.stderr); self.assertNotIn('send-keys', self.tmux_log()); self.assertEqual(self.tag('@orchestra-orchestrator'), 'codex:'+ID)
     def test_sessions_lists_tags(self):
         self.env['TEST_PANE_ALIVE'] = '1'; self.spawn('--agent', 'codex')
-        for extra in ([], ['--all']):
+        for extra, shown in (([], 'feature-test'), (['--all'], self.session)):       # --all prints full names
             rows = json.loads(self.run_cmd(['bash', self.script('sessions.sh'), '--json', *extra]).stdout); self.assertEqual(len(rows), 1); r = rows[0]
             self.assertEqual((r['session'], r['tmux'], r['agent'], r['orchestrator'], r['last_report'], r['branch'], r['repo']),
-                             ('feature-test', self.session, 'codex', 'codex:'+ID, '', 'feature/test', str(self.repo.resolve())))
+                             (shown, self.session, 'codex', 'codex:'+ID, '', 'feature/test', str(self.repo.resolve())))
         self.report('DONE', 'finished')
         r = json.loads(self.run_cmd(['bash', self.script('sessions.sh'), '--all', '--json']).stdout)[0]; self.assertRegex(r['last_report'], '^DONE '+STAMP+'$')
         text = self.run_cmd(['bash', self.script('sessions.sh'), '--all']).stdout.splitlines()
@@ -394,8 +395,10 @@ class PortTests(unittest.TestCase):
     def test_scripts_carry_no_legacy_names(self):
         scripts = list(ROOT.glob('*/scripts/*.sh')); self.assertGreaterEqual(len(scripts), 9)
         text = '\n'.join(p.read_text() for p in scripts)
-        for old in ('player-orchestrator', 'player-prompt', 'player-agent', 'orchestrator-mail', '@player-', 'PLAYER_', 'ORCHESTRATOR_', 'ORCHESTRATOR_SESSION'):
+        for old in ('player-orchestrator', 'player-prompt', 'player-agent', 'orchestrator-mail', '@player-', 'ORCHESTRATOR_'):
             self.assertNotIn(old, text, old)
+        # Internal shell variables may keep the PLAYER_ prefix; nothing environment-shaped may.
+        self.assertEqual(sorted(set(re.findall(r'\bPLAYER_[A-Z_]+', text))), ['PLAYER_RE', 'PLAYER_SCRIPTS'])
         for tag in TAGS: self.assertIn(tag, text, tag)
         self.assertEqual(sorted(set(re.findall(r'@orchestra-[a-z-]+', text))), sorted(TAGS))
         self.assertEqual(sorted(set(re.findall(r'\bORCHESTRA_[A-Z_]+', text))),
