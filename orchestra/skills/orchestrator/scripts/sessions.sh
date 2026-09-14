@@ -57,7 +57,8 @@ now=$(date +%s); rows=0; first=1
 [ $JSON = 1 ] && printf '['
 while IFS= read -r line; do
   split_tabs "$line"; set -- "${F[@]}"
-  name="${1:-}"; dead="${2:-}"; cmd="${3:-}"; activity="${4:-}"; path="${5:-}"; agent="${6:-}"; orch="${7:-}"; last="${8:-}"; tag_repo="${9:-}"; branch="${10:-}"; title="${11:-}"
+  name="${1:-}"; dead="${2:-}"; cmd="${3:-}"; activity="${4:-}"; path="${5:-}"; agent="${6:-}"; orch="${7:-}"; last="${8:-}"; tag_repo="${9:-}"; branch="${10:-}"
+  title="$(IFS="$TAB"; printf '%s' "${*:11}")"      # the last field may itself contain tabs
   rows=$((rows+1))
   quiet=$(( now - ${activity:-$now} )); [ $quiet -lt 0 ] && quiet=0
   if [ "${dead:-1}" = 1 ]; then state=dead

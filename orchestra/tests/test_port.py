@@ -325,7 +325,7 @@ class PortTests(unittest.TestCase):
         (self.base/'tmux-log').unlink(); x = self.report('PROGRESS', 'derived', env=inside); self.assertIn('queued for', x.stdout)
         self.assertEqual(self.calls()[-1]['args'][:5], ['queue', '--thread', ID, '--message', '[player feature-test] PROGRESS: derived'])
         self.assertRegex(self.last_report(), '^PROGRESS '+STAMP+'$'); self.assertIn('"-S", "/tmp/custom-socket", "set-option"', self.tmux_log())
-        self.env['TEST_CLI_EXIT'] = '1'; x = self.report('DONE', 'derived fail', env=inside, ok=False)
+        x = self.report('DONE', 'derived fail', env=dict(inside, TEST_CLI_EXIT='1'), ok=False)
         self.assertIn('recorded on session '+self.session, x.stderr); self.assertIn('DONE: derived fail', self.tag('@orchestra-undelivered'))
     def test_help_text_is_comment_only(self):
         x = self.run_cmd(['bash', self.script('spawn.sh'), '--help']); self.assertIn('Usage: spawn.sh', x.stdout)

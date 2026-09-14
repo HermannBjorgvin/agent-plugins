@@ -8,21 +8,22 @@
 # player's own tmux session, set by spawn.sh and adopt.sh; a player cannot change it. The
 # session and the socket of the server holding it come from ORCHESTRA_SESSION and
 # ORCHESTRA_SOCKET (injected by spawn.sh; the pane's own tmux environment points at a scratch
-# server, so every call here passes -S). No file is read or written.
+# server, so every call here passes -S), or from TMUX in a pane spawn.sh did not start (a
+# Kirby session adopted by adopt.sh). No file is read or written.
 # Delivery is reported only when the transport accepted the message; then @orchestra-last-report
 # is set to "<KIND> <ISO-8601 UTC>". A refused message is appended to @orchestra-undelivered on the
 # player's session and the exit status is nonzero; if even that tag cannot be written, the message
 # is echoed to stderr and marked NOT RECORDED. Nothing retries.
 set -eu
 . "$(dirname "$(realpath "$0")")/_routing.sh"
-name="${ORCHESTRA_PLAYER:-$(basename "$(pwd)")}"
-session="${ORCHESTRA_SESSION:-}"; sock="${ORCHESTRA_SOCKET:-}"
+player_session_context || { player_session=""; player_socket=""; player_name="$(basename "$(pwd)")"; }
+name="$player_name"; session="$player_session"; sock="$player_socket"
 if [ "${1:-}" = "--orchestrator" ]; then
   [ $# -eq 1 ] || { echo 'report.sh: the reporting target is the @orchestra-orchestrator tag on this session, set by spawn.sh and adopt.sh; a player cannot rebind itself' >&2; exit 2; }
-  [ -n "$session" ] || { echo 'report.sh: ORCHESTRA_SESSION is not set; not running in a player pane' >&2; exit 2; }
+  [ -n "$session" ] || { echo 'report.sh: neither ORCHESTRA_SESSION nor TMUX names a player session; not running in a player pane' >&2; exit 2; }
   target="$(tag_get "$sock" "$session" "$TAG_ORCHESTRATOR")"; printf '%s\n' "${target:-<unset>}"; exit
 fi
-[ $# -ge 2 ] || { sed -n '2,16p' "$0" >&2; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,15p' "$0" >&2; exit 2; }
 kind="$1"; shift
 case "$kind" in PROGRESS|QUESTION|BLOCKED|DONE) ;; *) echo "report.sh: KIND must be PROGRESS, QUESTION, BLOCKED or DONE" >&2; exit 2;; esac
 msg="[player $name] $kind: $*"
@@ -40,7 +41,7 @@ delivered() {
   tag_set "$sock" "$session" "$TAG_LAST_REPORT" "$kind $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null ||
     echo "report.sh: delivered, but could not set $TAG_LAST_REPORT on $session" >&2
 }
-[ -n "$session" ] || fallback 'ORCHESTRA_SESSION is not set; not running in a player pane'
+[ -n "$session" ] || fallback 'neither ORCHESTRA_SESSION nor TMUX names a player session; not running in a player pane'
 target="$(tag_get "$sock" "$session" "$TAG_ORCHESTRATOR")"
 # No fallback to CODEX_THREAD_ID: that is the player's own conversation, not its parent.
 [ -n "$target" ] || fallback "orchestrator target is not set ($TAG_ORCHESTRATOR on $session)"

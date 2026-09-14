@@ -38,8 +38,7 @@ default_branch_ref() {
 # exactly the bytes its createHash().update(root) does (no newline). Do not change them.
 project_key() { printf %s "$1" | sha256sum | cut -c1-16; }
 session_prefix() { printf 'kirby-%s-' "$(project_key "$(repo_root)")"; }
-# Any repo's player session (kirby-<16 hex>-<name>); kirby-term-shell-* are the user's own.
-PLAYER_RE='^kirby-[0-9a-f]{16}-'
+# Player sessions match PLAYER_RE (_routing.sh); kirby-term-shell-* are the user's own.
 is_player_session() { printf %s "$1" | grep -Eq "$PLAYER_RE"; }
 all_player_sessions() { tmux ls -F '#{session_name}' 2>/dev/null | grep -E "$PLAYER_RE" || true; }
 

@@ -49,7 +49,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --agent) AGENT="$2"; shift;; --model) MODEL="$2"; shift;; --effort) EFFORT="$2"; shift;; --permission-mode) PERM="$2"; shift;;
   --cmd) CMD="$2"; shift;; --from) FROM="$2"; shift;; --no-node-modules) LINK_NM=0;;
   --orchestrator) ORCH="$2"; shift;; --repo) ORCH_REPO="$2"; shift;;
-  --dry-run) DRY=1;; --resume) RESUME=1;; -h|--help) sed -n '2,45p' "$0"; exit 0;;
+  --dry-run) DRY=1;; --resume) RESUME=1;; -h|--help) sed -n '2,44p' "$0"; exit 0;;
   *) echo "spawn.sh: unknown argument $1" >&2; exit 2;; esac; shift; done
 [ -n "$BRANCH" ] || { echo "spawn.sh: --branch is required" >&2; exit 2; }
 git check-ref-format --branch "$BRANCH" >/dev/null || exit 2

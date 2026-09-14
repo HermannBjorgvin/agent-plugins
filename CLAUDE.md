@@ -95,6 +95,9 @@ compatibility shims for the former git-dir files and mailbox directory.
   server), `ORCHESTRA_PLAYER`, `ORCHESTRA_MODE`, `ORCHESTRA_HARNESS`, `ORCHESTRA_MODEL`,
   `ORCHESTRA_EFFORT`, `ORCHESTRA_PERMISSION_MODE`, `ORCHESTRA_COMMAND`,
   `ORCHESTRA_CLAUDE_SKILL`. The orchestrator target is never an environment variable.
+  `report.sh` resolves the player's own session from `ORCHESTRA_SESSION`/`ORCHESTRA_SOCKET`,
+  or from `TMUX` (`display-message -p '#S'`, socket `${TMUX%%,*}`) in a pane `spawn.sh` did
+  not start, such as a Kirby session adopted by `adopt.sh`.
 - Task body: paste buffer `orchestra-prompt-<session>` on the same server, loaded from stdin
   by `spawn.sh` and deleted by the launcher.
 - Listing: one `tmux list-panes -a -F` call with `#{@orchestra-*}` fields; no

@@ -41,7 +41,7 @@ remember() { tag_set "$sock" "$session" "$TAG_AGENT" "$1" 2>/dev/null; true; }
 preamble() {
   local inv; case "$1" in codex) inv='$player';; *) inv="${ORCHESTRA_CLAUDE_SKILL:-/orchestra:player}";; esac
   if [ "$mode" = resume ]; then
-    printf '%s %s%s' "$inv" "$RESTART_NOTE" "${body:+$'\n\n'$body}"
+    printf '%s %s%s' "$inv" "$RESTART_NOTE" "${body:+$nl$nl$body}"
   else
     printf '%s%s' "$inv" "${body:+ $body}"
   fi

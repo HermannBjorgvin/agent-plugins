@@ -90,7 +90,7 @@ check "undelivered tag holds the report" "tag $S1 @orchestra-undelivered | grep 
 (cd "$W1" && player BLOCKED "second"$'\n'"line") >/dev/null 2>&1
 check "undelivered appends newline-separated lines" "[ \"\$(tag $S1 @orchestra-undelivered | wc -l)\" = 2 ] && tag $S1 @orchestra-undelivered | tail -n1 | grep -Eq '^$STAMP \[player feature-x\] BLOCKED: second line\$'"
 check "last-report unchanged by refused reports" "tag $S1 @orchestra-last-report | grep -q '^PROGRESS '"
-(cd "$W1" && ORCHESTRA_SOCKET="$SOCK" bash "$P/report.sh" DONE unrecordable) >"$T/report3.out" 2>&1
+(cd "$W1" && unset TMUX TMUX_PANE && ORCHESTRA_SOCKET="$SOCK" bash "$P/report.sh" DONE unrecordable) >"$T/report3.out" 2>&1   # neither ORCHESTRA_SESSION nor TMUX
 check "no player session -> NOT RECORDED surfaced" "grep -q 'NOT RECORDED' '$T/report3.out' && grep -q 'DONE: unrecordable' '$T/report3.out'"
 check "no mailbox written" "[ ! -e '$HOME/.claude/orchestrator-mail' ] || [ -z \"\$(find '$HOME/.claude/orchestrator-mail' -newer '$T/task.txt' -type f 2>/dev/null)\" ]"
 (unset TMUX TMUX_PANE; tm new-session -d -s parent -x 120 -y 30 -- "$T/bin/claude")

@@ -17,6 +17,8 @@ TAG_LAUNCHING=@orchestra-launching        # 1 while the placeholder pane exists;
 TAG_LAST_REPORT=@orchestra-last-report    # "<KIND> <ISO-8601 UTC>" of the last report a transport accepted
 TAG_UNDELIVERED=@orchestra-undelivered    # "<ISO-8601 UTC> <message>" lines, oldest first, kept under UNDELIVERED_MAX bytes
 UNDELIVERED_MAX=8192                      # tmux rejects command lines around 16 KiB; the value travels on one
+PLAYER_RE='^kirby-[0-9a-f]{16}-'          # any repo's player session (kirby-<16 hex>-<name>)
+nl=$'\n'                                  # assigned once: ANSI-C quoting inside ${x:+...} is not portable
 
 # Exact tmux targeting. `=name` is exact for has-session, but pane/window commands (send-keys,
 # display-message, respawn-pane, set-option, capture-pane) reject it; `=name:` is exact for all.
@@ -48,14 +50,29 @@ record_undelivered() {
   local sock="$1" session="$2" line value
   line="$(date -u +%Y-%m-%dT%H:%M:%SZ) $(printf '%s' "$3" | tr '\n\t' '  ')"
   value="$(tag_get "$sock" "$session" "$TAG_UNDELIVERED")"
-  value="${value:+$value$'\n'}$line"
+  value="${value:+$value$nl}$line"
   while [ "$(byte_length "$value")" -ge "$UNDELIVERED_MAX" ]; do
     case "$value" in
-      *$'\n'*) value="${value#*$'\n'}";;
+      *"$nl"*) value="${value#*"$nl"}";;
       *) value="$(printf '%s' "$value" | head -c $((UNDELIVERED_MAX - 64))) [cut]"; break;;
     esac
   done
   tag_set "$sock" "$session" "$TAG_UNDELIVERED" "$value"
+}
+
+# player_session_context: the player's own session, the socket of the server holding it and the
+# short player name, into player_session, player_socket and player_name (lowercase: not environment). spawn.sh injects
+# ORCHESTRA_SESSION/ORCHESTRA_SOCKET/ORCHESTRA_PLAYER into the panes it starts. A pane it did not
+# start (a Kirby session adopted by adopt.sh) keeps tmux's own TMUX variable, so the session
+# comes from `display-message -p '#S'` and the socket from TMUX. Fails when neither is available.
+player_session_context() {
+  player_session="${ORCHESTRA_SESSION:-}"; player_socket="${ORCHESTRA_SOCKET:-}"; player_name="${ORCHESTRA_PLAYER:-}"
+  if [ -z "$player_session" ] && [ -n "${TMUX:-}" ]; then
+    player_socket="${TMUX%%,*}"
+    player_session="$(tmux -S "$player_socket" display-message -p '#S' 2>/dev/null)" || player_session=""
+  fi
+  [ -n "$player_session" ] || return 1
+  [ -n "$player_name" ] || player_name="$(printf '%s' "$player_session" | sed -E "s/${PLAYER_RE}//")"
 }
 
 # --- Reporting targets -----------------------------------------------------------------------
