@@ -4,7 +4,7 @@
     "name": "hermannbjorgvin",
     "url": "https://github.com/hermannbjorgvin"
   },
-  "description": "Personal Claude Code plugins: tv-pauser and orchestra",
+  "description": "Personal Claude Code plugins",
   "plugins": [
     {
       "name": "tv-pauser",
