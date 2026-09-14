@@ -24,7 +24,7 @@ tt="$(tmux_target "$target")"
 [ "$(tmux display-message -p -t "$tt" '#{pane_dead}')" = 0 ] || { echo "adopt.sh: $target has a dead pane; use spawn.sh --resume instead" >&2; exit 1; }
 pane_owned_by_agent tmux "$target" || { echo "adopt.sh: no agent is reading $target (a shell owns the pane); nothing rebound" >&2; exit 1; }
 [ -n "$AGENT" ] || AGENT="$(tmux show-options -v -t "$tt" @player-agent 2>/dev/null || true)"
-case "${AGENT:-claude}" in codex) invocation='$player';; *) invocation="$(claude_player_invocation)";; esac
+case "${AGENT:-claude}" in codex) invocation='$orchestra:player';; *) invocation="$(claude_player_invocation)";; esac
 worktree="$(tmux display-message -p -t "$tt" '#{pane_current_path}')"
 git -C "$worktree" rev-parse --absolute-git-dir >/dev/null 2>&1 || { echo "adopt.sh: $worktree is not a git worktree; nothing rebound" >&2; exit 1; }
 # The socket that reaches this orchestrator's tmux server: the one we are talking to now.

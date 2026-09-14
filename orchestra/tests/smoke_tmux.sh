@@ -127,7 +127,7 @@ printf '{"type":"session_meta","payload":{"id":"%s","cwd":"/elsewhere"}}\n' 0199
 bash "$O/spawn.sh" --repo "$T/repo" --branch feature/x --resume >"$T/auto.out" 2>&1
 sleep 2.5
 [ -n "${SMOKE_DEBUG:-}" ] && { echo "--- auto.out ---"; cat "$T/auto.out"; echo "--- screen ---"; bash "$O/screen.sh" "$S1" --lines 12 | cut -c1-160; echo "--- last-call ---"; cat "$T/last-call" 2>/dev/null | head -5; }
-check "codex resume with worktree uuid and prompt" "grep -q '^cli=codex' '$T/last-call' && grep -q '^arg=resume' '$T/last-call' && grep -q \"^arg=$uuid\" '$T/last-call' && grep -q '^arg=\$player tmux:parent' '$T/last-call'"
+check "codex resume with worktree uuid and prompt" "grep -q '^cli=codex' '$T/last-call' && grep -q '^arg=resume' '$T/last-call' && grep -q \"^arg=$uuid\" '$T/last-call' && grep -q '^arg=\$orchestra:player tmux:parent' '$T/last-call'"
 check "codex harness recorded" "[ \"\$(cat \"\$(git -C '$W1' rev-parse --absolute-git-dir)/player-agent\")\" = codex ]"
 rm -f "$T/fake-claude-noconv"
 

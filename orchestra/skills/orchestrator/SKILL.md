@@ -75,7 +75,7 @@ the original choice must be guaranteed. Do not silently substitute a model.
    do not modify repo guidance just to encode a one-off task. Any length is fine: the task
    travels through a file, not the tmux command line.
 3. Spawn. The generated prompt is the player invocation (`/orchestra:player <target>` for
-   Claude from this plugin, `$player <target>` for Codex), the reporting target, then the task.
+   Claude from this plugin, `$orchestra:player <target>` for Codex), the reporting target, then the task.
    ```
    spawn.sh --repo PATH --branch feature/name --prompt-file FILE --agent codex
    spawn.sh --repo PATH --branch feature/name --prompt-file FILE --agent claude --model fable --effort high

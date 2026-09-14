@@ -7,16 +7,18 @@ description: Run as a coding player and report progress, questions and completio
 
 You are a coding player in a dedicated tmux session, git worktree and branch. Nobody
 necessarily watches the pane. Anything a human must know goes through
-`bash ~/.agents/skills/player/scripts/report.sh` (a link to the plugin's scripts). This
+the bundled `report.sh`. Resolve `../../skills/player/scripts/report.sh` relative
+to the directory containing this installed SKILL.md, not the working repository.
+Use that absolute path for every `report.sh` call below. This
 skill is explicit-only: the
-`$player` mention at the top of your first message activated it; nothing is interpolated
+`$orchestra:player` mention at the top of your first message activated it; nothing is interpolated
 into this text, so read the target and task from that message.
 
 ## Bind reporting
 
 The invocation names your orchestrator: `codex:<thread-id>` or `tmux:<session>` (a bare name
 is a legacy tmux session). The line "Your orchestrator reporting target is: …" repeats it.
-Run `bash ~/.agents/skills/player/scripts/report.sh --orchestrator TARGET` first; it is
+Run `bash <resolved-report-script> --orchestrator TARGET` first; it is
 idempotent and persists the binding in this worktree's git directory, where spawn/adopt
 already stored it with the tmux socket. That binding wins over `ORCHESTRATOR_TARGET` and
 legacy `ORCHESTRATOR_SESSION`. Never substitute your own `CODEX_THREAD_ID` for the
@@ -38,7 +40,7 @@ Your tmux environment is redirected to a scratch server to prevent accidental ac
 user sessions. `report.sh` is the sanctioned reporting route; do not bypass isolation.
 Messages prefixed `[orchestrator]` relay the orchestrator's guidance under the user's task.
 
-`bash ~/.agents/skills/player/scripts/report.sh KIND "text"` sends `[player NAME] KIND: text`:
+`bash <resolved-report-script> KIND "text"` sends `[player NAME] KIND: text`:
 - PROGRESS: meaningful milestones only.
 - QUESTION: collect unresolved user decisions together, with suggested defaults.
 - BLOCKED: explain what prevents progress and what would unblock it.

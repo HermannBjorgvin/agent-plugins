@@ -1,0 +1,32 @@
+{
+  "name": "orchestra",
+  "version": "1.1.0",
+  "description": "Run parallel coding agents (players) in tmux sessions and git worktrees, supervised by an orchestrator that receives their reports",
+  "author": {
+    "name": "hermannbjorgvin"
+  },
+  "repository": "https://github.com/HermannBjorgvin/agent-plugins",
+  "license": "MIT",
+  "keywords": [
+    "tmux",
+    "worktree",
+    "orchestrator",
+    "agents",
+    "codex"
+  ],
+  "skills": "./codex/",
+  "interface": {
+    "displayName": "Orchestra",
+    "shortDescription": "Coordinate coding agents in tmux and git worktrees",
+    "longDescription": "Run parallel coding agents (players) in tmux sessions and git worktrees, supervised by an orchestrator that receives their reports",
+    "developerName": "hermannbjorgvin",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use Orchestra to coordinate coding players for this repository."
+    ]
+  }
+}

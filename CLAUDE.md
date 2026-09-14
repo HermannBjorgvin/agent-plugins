@@ -1,6 +1,7 @@
-# Claude Code Plugin Marketplace
+# Agent Plugin Marketplace
 
-This is a monorepo containing Claude Code plugins published as a marketplace.
+This monorepo publishes Claude Code and Codex plugins through one shared
+`.claude-plugin/marketplace.json` catalog.
 
 ## Structure
 
@@ -20,7 +21,9 @@ orchestra/              # Plugin: Orchestra (orchestrator + player skills)
   skills/
     orchestrator/       # /orchestra:orchestrator + scripts/ (spawn, sessions, send, adopt, …)
     player/             # /orchestra:player + scripts/report.sh
-  codex/                # Codex entrypoints (~/.agents/skills) and install.sh
+  .codex-plugin/
+    plugin.json         # Loads the Codex entrypoints
+  codex/                # Codex skill instructions and metadata
   tests/                # Mock-tmux unit tests and real-tmux smoke test (fake CLIs)
 ```
 
@@ -53,16 +56,24 @@ claude --plugin-dir ./tv-pauser
 
 Commit and push. Users install via:
 ```bash
-/plugin marketplace add HermannBjorgvin/claude-plugins
+/plugin marketplace add HermannBjorgvin/agent-plugins
 /plugin install tv-pauser@hermannbjorgvin
 ```
+
+Codex users install from the same catalog:
+```bash
+codex plugin marketplace add HermannBjorgvin/agent-plugins
+codex plugin add orchestra@hermannbjorgvin
+```
+
+Start a new session after installation. TV Pauser supports Claude Code only.
 
 ## Orchestra Details
 
 Two cooperating skills: the orchestrator spawns players (one tmux session + git worktree +
 branch each) and the player reports back through `skills/player/scripts/report.sh`. The
-scripts resolve each other relative to their real location, so the Codex install links
-(`codex/install.sh`) share them. Session names (`kirby-<key>-<branch>`) and worktree locations
+scripts resolve each other relative to their real location. Codex entrypoints reference
+the same scripts relative to their installed SKILL.md location. Session names (`kirby-<key>-<branch>`) and worktree locations
 (`.claude/worktrees/`) are shared with Kirby; do not change them.
 
 Tests (no model calls, isolated tmux socket):

@@ -8,13 +8,14 @@ description: Supervise parallel coding players in tmux and git worktrees; explic
 Split work into players, each in its own tmux session and git worktree. Players code;
 you supervise, answer questions and verify their results. Supports Claude Code and
 Codex CLI players from a Claude/tmux or Codex desktop/CLI orchestrator on the same host.
-This skill is explicit-only: it applies when the user invokes `$orchestrator`.
+This skill is explicit-only: it applies when the user invokes `$orchestra:orchestrator`.
 
 ## Start
 
-Run `bash ~/.agents/skills/orchestrator/scripts/sessions.sh --all`. Every script below
-lives in `~/.agents/skills/orchestrator/scripts/` (a link to the plugin's scripts, shared
-with the Claude installation); use those paths literally, nothing is interpolated for you.
+Resolve `../../skills/orchestrator/scripts/` relative to the directory containing
+this installed SKILL.md, not the working repository. Use the resulting absolute
+paths for every script below. These scripts are bundled in the plugin and shared
+with Claude. Start with `bash <resolved-scripts-directory>/sessions.sh --all`.
 Run the scripts; do not reimplement them. Read repo `AGENTS.md`, `CLAUDE.md`, and
 applicable parent docs.
 
@@ -75,13 +76,13 @@ the original choice must be guaranteed. Do not silently substitute a model.
    files, constraints, meaningful checks and finish criteria. Refer to repo conventions;
    do not modify repo guidance just to encode a one-off task. Any length is fine: the task
    travels through a file, not the tmux command line.
-3. Spawn. The generated prompt is the player invocation (`$player <target>` for Codex,
+3. Spawn. The generated prompt is the player invocation (`$orchestra:player <target>` for Codex,
    `/orchestra:player <target>` for Claude from this plugin), the reporting target, then the
-   task; the `$player` mention is what activates the explicit-only Codex player skill, and it
+   task; the `$orchestra:player` mention is what activates the explicit-only Codex player skill, and it
    is passed as the CLI's initial prompt.
    ```
-   bash ~/.agents/skills/orchestrator/scripts/spawn.sh --repo PATH --branch feature/name --prompt-file FILE --agent codex
-   bash ~/.agents/skills/orchestrator/scripts/spawn.sh --repo PATH --branch feature/name --prompt-file FILE --agent claude --model fable --effort high
+   bash <resolved-scripts-directory>/spawn.sh --repo PATH --branch feature/name --prompt-file FILE --agent codex
+   bash <resolved-scripts-directory>/spawn.sh --repo PATH --branch feature/name --prompt-file FILE --agent claude --model fable --effort high
    ```
    `--permission-mode auto` (Claude only) when appropriate to the existing authorization;
    `--dry-run` previews without writes or fetches; `--from REF` deliberately stacks work.

@@ -33,7 +33,7 @@
 #
 # Transport: the task body is written to <worktree git dir>/player-prompt and read inside the
 # pane by _launch.sh, so prompt size is not bounded by tmux's ~16 KiB command limit. The
-# launcher prefixes it with the player invocation: $player for Codex, and for Claude the
+# launcher prefixes it with the player invocation: $orchestra:player for Codex, and for Claude the
 # plugin-namespaced skill (/<plugin>:player) or /player for a personal skill install. Only the
 # known parent-session markers are removed from the player's environment (see _lib.sh);
 # CLAUDE_CONFIG_DIR, ANTHROPIC_API_KEY and CODEX_HOME are inherited. The agent runs with TMUX

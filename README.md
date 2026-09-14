@@ -1,16 +1,28 @@
-# Claude Code plugins
+# Agent plugins
 
-A small collection of plugins I use with Claude Code. Install whichever ones fit your workflow.
+A small collection of plugins for Claude Code and Codex. Install whichever ones fit your workflow.
 
 ## Install
+
+### Claude Code
 
 Add the marketplace once, then choose a plugin:
 
 ```text
-/plugin marketplace add HermannBjorgvin/claude-plugins
+/plugin marketplace add HermannBjorgvin/agent-plugins
 /plugin install orchestra@hermannbjorgvin
 /plugin install tv-pauser@hermannbjorgvin
 ```
+
+### Codex
+
+```bash
+codex plugin marketplace add HermannBjorgvin/agent-plugins
+codex plugin add orchestra@hermannbjorgvin
+```
+
+Start a new Codex session, then invoke `$orchestra:orchestrator` or `$orchestra:player`. Both clients use
+the shared `.claude-plugin/marketplace.json` catalog. TV Pauser is Claude Code only.
 
 ## Plugins
 

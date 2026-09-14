@@ -15,7 +15,7 @@ TV Pauser automatically pauses your media player (Apple TV, Chromecast, etc.) wh
 
 ```bash
 # Add the marketplace (one-time)
-/plugin marketplace add HermannBjorgvin/claude-plugins
+/plugin marketplace add HermannBjorgvin/agent-plugins
 
 # Install TV Pauser
 /plugin install tv-pauser@hermannbjorgvin

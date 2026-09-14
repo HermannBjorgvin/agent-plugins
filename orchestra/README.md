@@ -9,21 +9,30 @@ Use Claude Code in tmux or a Codex desktop/CLI conversation as the orchestrator.
 In Claude Code:
 
 ```text
-/plugin marketplace add HermannBjorgvin/claude-plugins
+/plugin marketplace add HermannBjorgvin/agent-plugins
 /plugin install orchestra@hermannbjorgvin
 ```
 
 The plugin provides `/orchestra:orchestrator` and `/orchestra:player`. Use the namespaced names to avoid conflicts with other installed skills.
 
-For Codex, run the installer from the Orchestra plugin directory:
+In Codex:
 
 ```bash
-bash codex/install.sh
+codex plugin marketplace add HermannBjorgvin/agent-plugins
+codex plugin add orchestra@hermannbjorgvin
 ```
 
-This copies the Codex skill instructions and metadata into `~/.agents/skills` and links their scripts to the plugin. Invoke them with `$orchestrator` and `$player`. Use `--skills-dir DIR` for another installation directory. If existing skills differ, the installer asks you to use `--force` before replacing them.
+Start a new Codex session, then invoke `$orchestra:orchestrator` or `$orchestra:player`. Codex loads
+its entrypoints from the installed plugin; both clients share the bundled scripts.
+No separate skill installer is needed.
 
-Rerun the installer after a plugin update: the script links point to a specific installed version. You can also run it from `orchestra/` in a checkout of this repository to link to that checkout.
+For local development, add the repository root with `codex plugin marketplace add .`,
+then install `orchestra@hermannbjorgvin` and start a new session.
+
+If you used the former `codex/install.sh`, remove `~/.agents/skills/orchestrator`
+and `~/.agents/skills/player` after confirming they are the copies installed by
+Orchestra. Preserve any personal changes before removing them, so Codex doesn't
+load duplicate standalone skills alongside the plugin.
 
 ## Start a task
 
@@ -34,7 +43,7 @@ For a Claude orchestrator, open Claude Code inside tmux. A Codex orchestrator ca
 /orchestra:orchestrator Show me the status of my players.
 ```
 
-In Codex, use `$orchestrator` with the same task text. The orchestrator chooses a branch and starts a player, then receives its reports in the conversation. Each assignment should fit one branch and PR; the orchestrator can coordinate assignments across multiple repositories.
+In Codex, use `$orchestra:orchestrator` with the same task text. The orchestrator chooses a branch and starts a player, then receives its reports in the conversation. Each assignment should fit one branch and PR; the orchestrator can coordinate assignments across multiple repositories.
 
 The spawn command prints the worktree and tmux session name. To inspect a player yourself:
 

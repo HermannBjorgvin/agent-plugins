@@ -107,7 +107,7 @@ PLAYER_SCRIPTS="$ORCH_SCRIPTS/../../player/scripts"
 
 # The Claude skill that turns a pane into a player: /<plugin>:player when these scripts run
 # from a Claude Code plugin (skills/*/scripts under a .claude-plugin manifest), /player for a
-# personal skill. Codex players are always activated with the $player mention.
+# personal skill. Codex players are always activated with the $orchestra:player mention.
 claude_player_invocation() {
   local manifest="$ORCH_SCRIPTS/../../../.claude-plugin/plugin.json" name=""
   [ -f "$manifest" ] && name="$(sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$manifest" | head -n1)"
