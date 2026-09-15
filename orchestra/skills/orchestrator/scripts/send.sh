@@ -8,9 +8,9 @@
 #        send.sh <session> [--repo <path>] --key <tmux key>     e.g. Escape, C-c, Enter, Up
 #        send.sh <session> [--repo <path>] --type <text…>       typed literally, not pasted:
 #                                                               for slash commands (/reload-skills)
-# The session is a short name (this repo, or unique on the machine) or a full kirby-… name;
-# names match exactly, never by prefix. Long text is fine: it is pasted from a buffer, not
-# passed on the tmux command line.
+# The session is a branch (resolved in this repo, --repo, or uniquely across repos) or an exact
+# tmux session name of a tagged player; never a prefix, never a session without the tags. Long
+# text is fine: it is pasted from a buffer, not passed on the tmux command line.
 . "$(dirname "$(realpath "$0")")/_lib.sh"
 [ $# -ge 2 ] || { sed -n '2,13p' "$0" >&2; exit 2; }
 session="$1"; shift

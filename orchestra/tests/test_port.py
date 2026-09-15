@@ -302,18 +302,18 @@ class PortTests(unittest.TestCase):
         self.assertEqual(self.state()[self.session]['options'], {})      # never tagged, never touched
         self.assertEqual(self.tag('@orchestra-branch', self.session+'-2'), 'feature/test')
         self.assertIn('running', self.spawn(ok=False).stderr)            # the player exists: found by tags, not by name
-        self.spawn('--prompt', 'p', prompt=False, branch='feature/test-2')   # its preferred label is now taken by our own -2
-        self.assertEqual(sorted(self.state()), [self.session, self.session+'-2', self.session+'-3'])
-        self.assertEqual(self.tag('@orchestra-branch', self.session+'-3'), 'feature/test-2')
+        self.spawn('--prompt', 'p', prompt=False, branch='feature/test-2')   # its preferred label is now taken by our own -2: the suffix goes on the label
+        self.assertEqual(sorted(self.state()), [self.session, self.session+'-2', self.session+'-2-2'])
+        self.assertEqual(self.tag('@orchestra-branch', self.session+'-2-2'), 'feature/test-2')
         self.clear_log(); self.orch('send.sh', 'feature/test', '--repo', str(self.repo), 'hi')
         self.assertIn('"=%s-2:"' % self.session, self.tmux_log()); self.assertNotIn('"=%s:"' % self.session, self.tmux_log())
         self.clear_log(); self.orch('send.sh', 'feature/test-2', '--repo', str(self.repo), 'hi')
-        self.assertIn('"=%s-3:"' % self.session, self.tmux_log()); self.assertNotIn('"=%s-2:"' % self.session, self.tmux_log())
+        self.assertIn('"=%s-2-2:"' % self.session, self.tmux_log()); self.assertNotIn('"=%s-2:"' % self.session, self.tmux_log())
         # the stranger's exact name is refused everywhere: it is not one of ours
         for args in (('send.sh', self.session, 'hi'), ('screen.sh', self.session), ('kill.sh', self.session), ('adopt.sh', self.session, '--orchestrator', 'tmux:p')):
             self.clear_log(); x = self.orch(*args, ok=False); self.assertNotEqual(x.returncode, 0, args)
             self.assertNotIn('"=%s:"' % self.session, self.tmux_log(), args); self.assertNotIn('kill-session', self.tmux_log(), args)
-        self.assertEqual(sorted(self.state()), [self.session, self.session+'-2', self.session+'-3'])
+        self.assertEqual(sorted(self.state()), [self.session, self.session+'-2', self.session+'-2-2'])
         x = self.report('PROGRESS', 'named', env=self.player_env(ORCHESTRA_SESSION=self.session+'-2'))
         self.assertEqual(self.calls()[-1]['args'][-1], '[player %s-2] PROGRESS: named' % self.session)     # the report carries the session name
     def test_duplicate_name_race_takes_next_suffix(self):
@@ -341,7 +341,7 @@ class PortTests(unittest.TestCase):
         self.assertIn('"=some-label:"', self.tmux_log()); self.assertNotIn('"=%s:"' % self.session, self.tmux_log())
         self.orch('send.sh', 'some-label', 'hello')                      # an exact player name needs no repo
         self.assertIn('running', self.spawn(ok=False).stderr)
-        self.kill_pane('some-label'); self.spawn('--resume', prompt=False)     # --resume resolves (repo, branch) too
+        self.kill_pane('some-label'); self.spawn('--resume', '--agent', 'claude', prompt=False)     # --resume resolves (repo, branch) too
         self.assertEqual(self.calls()[-1]['env']['ORCHESTRA_SESSION'], 'some-label'); self.assertEqual(sorted(self.state()), [self.session, 'some-label'])
         rows = self.sessions('--repo', str(self.repo)); self.assertEqual([(r['session'], r['name'], r['branch']) for r in rows], [('some-label', 'some-label', 'feature/test')])
         # two sessions with one identity (should not happen): the oldest wins, the other is reported, nothing is killed
@@ -569,8 +569,8 @@ class PortTests(unittest.TestCase):
         for old in ('player-orchestrator', 'player-prompt', 'player-agent', 'orchestrator-mail', '@player-', 'ORCHESTRATOR_', 'ORCHESTRA_PLAYER',
                     'PLAYER_RE', 'project_key', 'session_prefix', 'kirby-', 'KIRBY'):
             self.assertNotIn(old, text, old)
-        # "kirby" survives only in comments: the spawner value and the sentence that the contract is shared.
-        self.assertEqual([l for l in text.splitlines() if 'kirby' in l.lower() and not l.lstrip().startswith('#')], [])
+        # "kirby" survives only in comments (the spawner value, the sentence that the contract is shared).
+        self.assertEqual([l for l in text.splitlines() if 'kirby' in l.split('#', 1)[0].lower()], [])
         # Internal shell variables may keep the PLAYER_ prefix; nothing environment-shaped may.
         self.assertEqual(sorted(set(re.findall(r'\bPLAYER_[A-Z_]+', text))), ['PLAYER_SCRIPTS'])
         for tag in TAGS: self.assertIn(tag, text, tag)

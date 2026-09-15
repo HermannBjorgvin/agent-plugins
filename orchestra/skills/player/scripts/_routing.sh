@@ -9,15 +9,16 @@
 # or as #{@orchestra-agent} in a format. Absent means unset; no sentinels. Values never contain a
 # tab; only @orchestra-undelivered contains newlines.
 TAG_SPAWNER=@orchestra-spawner            # kirby | orchestra: whichever program created the session
-TAG_REPO=@orchestra-repo                  # main checkout, absolute and symlink-resolved (Kirby's projectKey input)
-TAG_BRANCH=@orchestra-branch              # branch the session was spawned under, unsanitized (feature/x)
+TAG_REPO=@orchestra-repo                  # main checkout, absolute and symlink-resolved
+TAG_SESSION_TYPE=@orchestra-session-type  # worktree (players) | shell | agent (Kirby's terminal tabs)
+TAG_BRANCH=@orchestra-branch              # worktree sessions: the branch, unsanitized (feature/x)
 TAG_ORCHESTRATOR=@orchestra-orchestrator  # reporting target: codex:<uuid> | tmux:<session>
 TAG_AGENT=@orchestra-agent                # claude | codex | gemini | copilot | opencode | custom
 TAG_LAUNCHING=@orchestra-launching        # 1 while the placeholder pane exists; unset once the harness started
 TAG_LAST_REPORT=@orchestra-last-report    # "<KIND> <ISO-8601 UTC>" of the last report a transport accepted
 TAG_UNDELIVERED=@orchestra-undelivered    # "<ISO-8601 UTC> <message>" lines, oldest first, kept under UNDELIVERED_MAX bytes
 UNDELIVERED_MAX=8192                      # tmux rejects command lines around 16 KiB; the value travels on one
-PLAYER_RE='^kirby-[0-9a-f]{16}-'          # any repo's player session (kirby-<16 hex>-<name>)
+SESSION_TYPE_WORKTREE=worktree            # a session's name is a label; spawner + session-type say whose it is
 nl=$'\n'                                  # assigned once: ANSI-C quoting inside ${x:+...} is not portable
 
 # Exact tmux targeting. `=name` is exact for has-session, but pane/window commands (send-keys,
@@ -60,19 +61,19 @@ record_undelivered() {
   tag_set "$sock" "$session" "$TAG_UNDELIVERED" "$value"
 }
 
-# player_session_context: the player's own session, the socket of the server holding it and the
-# short player name, into player_session, player_socket and player_name (lowercase: not environment). spawn.sh injects
-# ORCHESTRA_SESSION/ORCHESTRA_SOCKET/ORCHESTRA_PLAYER into the panes it starts. A pane it did not
-# start (a Kirby session adopted by adopt.sh) keeps tmux's own TMUX variable, so the session
-# comes from `display-message -p '#S'` and the socket from TMUX. Fails when neither is available.
+# player_session_context: the player's own session name and the socket of the server holding it,
+# into player_session and player_socket (lowercase: not environment). spawn.sh injects
+# ORCHESTRA_SESSION/ORCHESTRA_SOCKET into the panes it starts. A pane it did not start (a Kirby
+# session adopted by adopt.sh) keeps tmux's own TMUX variable, so the session comes from
+# `display-message -p '#S'` and the socket from TMUX. The name is used as is (it is a label,
+# never parsed). Fails when neither source is available.
 player_session_context() {
-  player_session="${ORCHESTRA_SESSION:-}"; player_socket="${ORCHESTRA_SOCKET:-}"; player_name="${ORCHESTRA_PLAYER:-}"
+  player_session="${ORCHESTRA_SESSION:-}"; player_socket="${ORCHESTRA_SOCKET:-}"
   if [ -z "$player_session" ] && [ -n "${TMUX:-}" ]; then
     player_socket="${TMUX%%,*}"
     player_session="$(tmux -S "$player_socket" display-message -p '#S' 2>/dev/null)" || player_session=""
   fi
-  [ -n "$player_session" ] || return 1
-  [ -n "$player_name" ] || player_name="$(printf '%s' "$player_session" | sed -E "s/${PLAYER_RE}//")"
+  [ -n "$player_session" ]
 }
 
 # --- Reporting targets -----------------------------------------------------------------------

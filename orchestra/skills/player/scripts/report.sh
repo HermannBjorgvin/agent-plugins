@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Send one message to the orchestrator as `[player <name>] KIND: text`.
+# Send one message to the orchestrator as `[player <session>] KIND: text`, where <session> is
+# this player's tmux session name (a label chosen at spawn; never parsed).
 #
 # Usage: report.sh PROGRESS|QUESTION|BLOCKED|DONE <text…>
 #        report.sh --orchestrator          print the current reporting target
@@ -16,8 +17,8 @@
 # is echoed to stderr and marked NOT RECORDED. Nothing retries.
 set -eu
 . "$(dirname "$(realpath "$0")")/_routing.sh"
-player_session_context || { player_session=""; player_socket=""; player_name="$(basename "$(pwd)")"; }
-name="$player_name"; session="$player_session"; sock="$player_socket"
+player_session_context || { player_session=""; player_socket=""; }
+session="$player_session"; sock="$player_socket"; name="${session:-$(basename "$(pwd)")}"
 if [ "${1:-}" = "--orchestrator" ]; then
   [ $# -eq 1 ] || { echo 'report.sh: the reporting target is the @orchestra-orchestrator tag on this session, set by spawn.sh and adopt.sh; a player cannot rebind itself' >&2; exit 2; }
   [ -n "$session" ] || { echo 'report.sh: neither ORCHESTRA_SESSION nor TMUX names a player session; not running in a player pane' >&2; exit 2; }

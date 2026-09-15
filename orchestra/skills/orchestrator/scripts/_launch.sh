@@ -4,10 +4,10 @@
 # prompt text ever passes through a tmux or shell command line. Environment (all injected by
 # spawn.sh through respawn-pane -e):
 #
-#   ORCHESTRA_SESSION      this player's tmux session name (kirby-<key>-<branch>)
+#   ORCHESTRA_SESSION      this player's tmux session name (a label; the session is identified
+#                          by its tags, so the name is used as is and never parsed)
 #   ORCHESTRA_SOCKET       socket of the tmux server holding it (the pane's own tmux environment
 #                          is redirected to a scratch server, so every call passes -S)
-#   ORCHESTRA_PLAYER       short player name (session name minus the kirby-<key>- prefix)
 #   ORCHESTRA_MODE         fresh | resume
 #   ORCHESTRA_HARNESS      claude | codex | gemini | copilot | opencode | custom | auto (resume only)
 #   ORCHESTRA_MODEL, ORCHESTRA_EFFORT, ORCHESTRA_PERMISSION_MODE   empty = not given
@@ -88,7 +88,7 @@ resume_claude() {
 resume_auto() {
   command -v script >/dev/null || fail "cannot detect the harness without util-linux script(1); rerun with --agent claude or --agent codex"
   local log rc
-  log="$(mktemp /tmp/kirby-resume-probe.XXXXXX)" || fail "cannot create a probe log in /tmp"
+  log="$(mktemp /tmp/orchestra-resume-probe.XXXXXX)" || fail "cannot create a probe log in /tmp"
   # The prompt and options travel in the environment; the sh -c string contains no user text.
   # script(1) runs the command through $SHELL: pin /bin/sh so a login shell's rc files cannot
   # reorder PATH or otherwise change which claude binary starts.
