@@ -1,82 +1,68 @@
 #!/usr/bin/env bash
-# Send one message to a Codex thread or the orchestrator's tmux session as `[player <name>] KIND: text`.
+# Send one message to the orchestrator as `[player <session>] KIND: text`, where <session> is
+# this player's tmux session name (a label chosen at spawn; never parsed).
 #
 # Usage: report.sh PROGRESS|QUESTION|BLOCKED|DONE <text…>
-#        report.sh --orchestrator <target> [--socket PATH]   bind future reports to that target
-#        report.sh --orchestrator                             print the current binding
+#        report.sh --orchestrator          print the current reporting target
 #
-# Targets: codex:<thread-id> or tmux:<session>; a bare name is a legacy tmux session.
-# The binding lives in this worktree's git directory and wins over ORCHESTRATOR_TARGET and
-# legacy ORCHESTRATOR_SESSION; outside a git worktree only the environment applies and no
-# binding is written (a global binding would silently route unrelated players).
-# Delivery is reported only when the transport accepted the message. A failed send is saved
-# to ORCHESTRATOR_MAIL_DIR or ~/.claude/orchestrator-mail when possible; if even that fails,
-# the message is echoed to stderr and marked NOT SAVED. Exit is nonzero in both cases.
+# The target (codex:<thread-id> or tmux:<session>) is the @orchestra-orchestrator tag on this
+# player's own tmux session, set by spawn.sh and adopt.sh; a player cannot change it. The
+# session and the socket of the server holding it come from ORCHESTRA_SESSION and
+# ORCHESTRA_SOCKET (injected by spawn.sh; the pane's own tmux environment points at a scratch
+# server, so every call here passes -S), or from TMUX in a pane spawn.sh did not start (a
+# Kirby session adopted by adopt.sh). No file is read or written.
+# Delivery is reported only when the transport accepted the message; then @orchestra-last-report
+# is set to "<KIND> <ISO-8601 UTC>". Failed delivery exits nonzero and prints the target, reason,
+# and complete original report to stderr so the player can handle the failure. A failed submit
+# may follow a successful paste; inspect before retrying to avoid duplicates. Nothing retries.
 set -eu
 . "$(dirname "$(realpath "$0")")/_routing.sh"
-name="${PLAYER_NAME:-$(basename "$(pwd)")}"
-binding=""
-if gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)"; then binding="$gitdir/player-orchestrator"; fi
+player_session_context || { player_session=""; player_socket=""; }
+session="$player_session"; sock="$player_socket"; name="${session:-$(basename "$(pwd)")}"
 if [ "${1:-}" = "--orchestrator" ]; then
-  if [ -n "${2:-}" ]; then
-    target="$(normalize_target "$2")" || exit 2
-    [ -n "$binding" ] || { echo 'report.sh: not inside a git worktree; the binding is only persisted per worktree (set ORCHESTRATOR_TARGET instead)' >&2; exit 2; }
-    socket="${ORCHESTRATOR_TMUX_SOCKET:-/tmp/tmux-$(id -u)/default}"
-    if [ -s "$binding" ] && [ "$(normalize_target "$(head -n1 "$binding")" 2>/dev/null || true)" = "$target" ]; then
-      bound_socket="$(sed -n '2p' "$binding")"; socket="${bound_socket:-$socket}"
-    fi
-    if [ "${3:-}" = --socket ]; then socket="$4"; elif [ $# -gt 2 ]; then echo 'unexpected binding arguments' >&2; exit 2; fi
-    # One atomic file carries both destination and socket. Legacy one-line bindings still work.
-    temporary="$(mktemp "${binding}.XXXXXX")" || { echo "report.sh: cannot write $binding" >&2; exit 1; }
-    printf '%s\n%s\n' "$target" "$socket" > "$temporary" && mv "$temporary" "$binding" || { rm -f "$temporary"; echo "report.sh: cannot write $binding" >&2; exit 1; }
-    echo "reports now go to $target ($binding)"; exit
-  fi
-  if [ -n "$binding" ] && [ -s "$binding" ]; then head -n1 "$binding"; else printf '%s\n' "${ORCHESTRATOR_TARGET:-${ORCHESTRATOR_SESSION:-<unset>}}"; fi
-  exit
+  [ $# -eq 1 ] || { echo 'report.sh: the reporting target is the @orchestra-orchestrator tag on this session, set by spawn.sh and adopt.sh; a player cannot rebind itself' >&2; exit 2; }
+  [ -n "$session" ] || { echo 'report.sh: neither ORCHESTRA_SESSION nor TMUX names a player session; not running in a player pane' >&2; exit 2; }
+  target="$(tag_get "$sock" "$session" "$TAG_ORCHESTRATOR")"; printf '%s\n' "${target:-<unset>}"; exit
 fi
-[ $# -ge 2 ] || { sed -n '2,15p' "$0" >&2; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,17p' "$0" >&2; exit 2; }
 kind="$1"; shift
 case "$kind" in PROGRESS|QUESTION|BLOCKED|DONE) ;; *) echo "report.sh: KIND must be PROGRESS, QUESTION, BLOCKED or DONE" >&2; exit 2;; esac
 msg="[player $name] $kind: $*"
-target="${ORCHESTRATOR_TARGET:-${ORCHESTRATOR_SESSION:-}}"
-sock="${ORCHESTRATOR_TMUX_SOCKET:-/tmp/tmux-$(id -u)/default}"
-if [ -n "$binding" ] && [ -s "$binding" ]; then
-  target="$(head -n1 "$binding")"
-  bound_socket="$(sed -n '2p' "$binding")"
-  sock="${bound_socket:-$sock}"
-fi
-# No fallback to CODEX_THREAD_ID: that is the player's own conversation, not its parent.
-mail_dir="${ORCHESTRATOR_MAIL_DIR:-$HOME/.claude/orchestrator-mail}"
-mail_key="$(printf '%s' "${target:-unknown}" | tr -c 'a-zA-Z0-9_-' '_')"
-mailbox="$mail_dir/$mail_key.log"
-# Called after a failed send. Saves when it can and says exactly what happened; never retries.
-fallback() {
-  if mkdir -p "$mail_dir" 2>/dev/null && printf '%s  %s\n' "$(date -Is)" "$msg" >> "$mailbox" 2>/dev/null; then
-    echo "report.sh: NOT DELIVERED ($1); saved in $mailbox" >&2
-  else
-    echo "report.sh: NOT DELIVERED ($1) and NOT SAVED (cannot write $mailbox). The message was:" >&2
-    printf '%s\n' "$msg" >&2
-  fi
+destination=""
+# Keep the full destination and report intact even when tmux is unreachable; never retries.
+delivery_failed() {
+  printf 'report.sh: delivery failed\nTarget: %s\nReason: %s\nReport: %s\n' \
+    "${destination:-<unknown>}" "$1" "$msg" >&2
   exit 1
 }
-[ -n "$target" ] || fallback 'orchestrator target is not set'
-target="$(normalize_target "$target" 2>/dev/null)" || fallback "invalid orchestrator target ${target}"
+delivered() {
+  tag_set "$sock" "$session" "$TAG_LAST_REPORT" "$kind $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null ||
+    echo "report.sh: delivered, but could not set $TAG_LAST_REPORT on $session" >&2
+}
+[ -n "$session" ] || delivery_failed 'neither ORCHESTRA_SESSION nor TMUX names a player session; not running in a player pane'
+destination="$(tag_get "$sock" "$session" "$TAG_ORCHESTRATOR")"
+# No fallback to CODEX_THREAD_ID: that is the player's own conversation, not its parent.
+[ -n "$destination" ] || delivery_failed "orchestrator target is unset or unreachable ($TAG_ORCHESTRATOR on $session)"
+normalize_target "$destination" >/dev/null 2>&1 || delivery_failed 'invalid orchestrator target'
+target="$destination"
 case "$target" in
   codex:*)
-    if codex queue --thread "${target#codex:}" --message "$msg"; then echo "queued for $target"; exit 0; fi
-    fallback 'Codex queue refused the message; inspect before retrying to avoid duplicate reports';;
+    if codex queue --thread "${target#codex:}" --message "$msg"; then delivered; echo "queued for $target"; exit 0; fi
+    delivery_failed 'Codex queue refused the message; inspect before retrying to avoid duplicate reports';;
   tmux:*) target="${target#tmux:}";;
 esac
-t() { tmux -S "$sock" "$@"; }
-t has-session -t "=$target" 2>/dev/null || fallback "orchestrator session $target is gone"
+t() { tmux_on "$sock" "$@"; }
+t has-session -t "=$target" 2>/dev/null || delivery_failed "orchestrator session $target is gone or unreachable"
 # Would the paste be run as a shell command? Only an agent at the terminal may receive it.
-pane_owned_by_agent tmux -S "$sock" "$target" || fallback "a shell owns $target now, not an agent"
+pane_owned_by_agent "$sock" "$target" || delivery_failed "a shell owns $target now, not an agent"
 # One bracketed paste (-p) keeps embedded newlines from submitting early; the buffer is loaded
 # from stdin because tmux rejects command lines over ~16 KiB. The pause lets a slow UI ingest
 # the paste before Enter.
 tt="$(tmux_target "$target")"
-printf '%s' "$msg" | t load-buffer -b "player-$$" - || fallback "tmux could not load the message"
-t paste-buffer -p -d -b "player-$$" -t "$tt" || fallback "tmux could not paste into $target"
+printf '%s' "$msg" | t load-buffer -b "player-$$" - || delivery_failed "tmux could not load the message"
+# errexit is live inside the brace group: cleanup must not exit before the error is printed.
+t paste-buffer -p -d -b "player-$$" -t "$tt" || { t delete-buffer -b "player-$$" 2>/dev/null || :; delivery_failed "tmux could not paste into $target"; }
 sleep 0.3
-t send-keys -t "$tt" Enter || fallback "tmux could not submit the message in $target"
+t send-keys -t "$tt" Enter || delivery_failed "tmux could not submit the message in $target; the paste succeeded, inspect before retrying"
+delivered
 echo "sent to $target"
