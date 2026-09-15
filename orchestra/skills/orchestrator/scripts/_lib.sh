@@ -148,7 +148,7 @@ PARENT_SESSION_MARKERS=(CLAUDECODE CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_SESSION
 paste_into() {
   local session="$1" text="$2"; shift 2
   printf '%s' "$text" | tmux "$@" load-buffer -b "orch-$$" - || return 1
-  tmux "$@" paste-buffer -p -d -b "orch-$$" -t "$(tmux_target "$session")" || return 1
+  tmux "$@" paste-buffer -p -d -b "orch-$$" -t "$(tmux_target "$session")" || { tmux "$@" delete-buffer -b "orch-$$" 2>/dev/null; return 1; }
   sleep 0.3
   tmux "$@" send-keys -t "$(tmux_target "$session")" Enter
 }

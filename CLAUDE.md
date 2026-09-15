@@ -84,10 +84,13 @@ human-readable label chosen once at creation and never parsed; its identity is i
 `sanitize(basename(repo))-sanitize(branch)` for worktree sessions and
 `sanitize(basename(repo))-shell` / `-agent` for Kirby's terminal tabs, capped at 200 characters:
 on overflow, the first 195 characters, `-`, and the first 4 hex digits of sha256 over the
-unsanitized `<basename>-<branch>` string. If any session on the server already has the name,
-`-2`, `-3`, … is appended to the preferred label until one is free (so a taken
-`repo-feature-x-2` yields `repo-feature-x-2-2`); the suffix is chosen at creation only. Both
-test suites pin this table; keep it identical in both repositories:
+unsanitized string the label was built from (`<basename>-<branch>` for worktree sessions,
+`<basename>-shell` / `<basename>-agent` for terminal tabs). If any session on the server
+already has the name, `-2`, `-3`, … is appended to the preferred label until one is free (so
+a taken `repo-feature-x-2` yields `repo-feature-x-2-2`); the suffix is appended AFTER the
+200-character cap and may push the name past 200. It is chosen at creation only, counting
+from the preferred label each time (a second lost race yields `-3`). Both test suites pin
+this table; keep it identical in both repositories:
 
 | repo | type | branch | label |
 | --- | --- | --- | --- |
@@ -98,6 +101,8 @@ test suites pin this table; keep it identical in both repositories:
 | `/home/u/Kirby` | agent | | `Kirby-agent` |
 | `/x/r` | worktree | `a`×250 | `r-` + `a`×193 + `-0a22` |
 | `/x/agent-plugins` | worktree | `a`×250 | `agent-plugins-` + `a`×181 + `-1fad` |
+| `/x/r` | worktree | `a/`×125 | `r-` + `a-`×96 + `a-6e0f` |
+| `/x/r` | worktree | `a.`×125 | `r-` + `a-`×96 + `a-b373` |
 
 Every lookup resolves through the tags: a player is a session with `@orchestra-spawner` set
 and `@orchestra-session-type` `worktree`; its identity is (`@orchestra-repo`,

@@ -197,7 +197,7 @@ The launcher unsets `TMUX` and redirects `TMUX_TMPDIR` to a scratch directory to
 
 Known limitations:
 
-- Sessions created by earlier versions of these scripts, which kept state in files and named sessions after a hash of the repository path, are not recognised.
+- Version 2.0.0 changed session naming and identity without compatibility shims: sessions created by earlier versions, which kept state in files and named sessions after a hash of the repository path, are not recognised. Kill or finish those players with the version that created them.
 - The test suites use fake agent CLIs. They do not verify live model sessions or delivery from a real player through `codex queue`.
 - Codex resume finds conversations by the worktree path in rollout files; paths requiring JSON escaping do not match.
 - OpenCode resume is untested. Gemini and Copilot resume are unsupported.

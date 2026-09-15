@@ -43,6 +43,10 @@ LABELS = [  # (repo path, session type, branch, label)
     # characters of sha256 over the UNSANITIZED "<basename>-<branch>" string.
     ('/x/r', 'worktree', 'a'*250, 'r-' + 'a'*193 + '-0a22'),
     ('/x/agent-plugins', 'worktree', 'a'*250, 'agent-plugins-' + 'a'*181 + '-1fad'),
+    # Same sanitized head, different unsanitized input: the tails differ only if the hash is over
+    # the unsanitized string (hashing the sanitized one gives ec93 for both).
+    ('/x/r', 'worktree', 'a/'*125, 'r-' + 'a-'*96 + 'a-6e0f'),
+    ('/x/r', 'worktree', 'a.'*125, 'r-' + 'a-'*96 + 'a-b373'),
 ]
 TMUX_MOCK = r'''#!/usr/bin/env python3
 import os, sys, json, re, subprocess
@@ -68,7 +72,7 @@ def create(n, path):
     state[n] = {'dead': 0, 'options': {}, 'path': path, 'created': 1 + max([s.get('created', 0) for s in state.values()] + [0])}
 def expand(fmt, n, s):
     vals = {'session_name': n, 'session_created': str(s.get('created', 0)), 'session_path': s.get('path', ''),
-            'pane_dead': str(s.get('dead', 1)), 'pane_current_command': 'bash', 'window_activity': '0',
+            'pane_dead': str(s.get('dead', 1)), 'pane_current_command': os.environ.get('TEST_PANE_COMMAND', 'bash'), 'window_activity': '0',
             'pane_current_path': s.get('path', ''), 'pane_title': os.environ.get('TEST_PANE_TITLE', '')}
     return re.sub(r'#\{([^}]+)\}', lambda m: s['options'].get(m.group(1), '') if m.group(1).startswith('@') else vals.get(m.group(1), ''), fmt)
 if sum(len(x)+1 for x in sys.argv) > 16384: sys.stderr.write('command too long\n'); sys.exit(1)
@@ -79,12 +83,15 @@ if c == 'has-session':
 if c == 'show-environment': sys.exit(0)
 if c == 'new-session':
     n = a[a.index('-s')+1]
-    # TEST_NEW_SESSION_RACE=<name>: another creator takes that name just before this call lands.
-    if n == os.environ.get('TEST_NEW_SESSION_RACE') and n not in state: create(n, '/elsewhere'); save()
+    # TEST_NEW_SESSION_RACE=<name>[,<name>…]: another creator takes each such name just before this call lands.
+    if n in os.environ.get('TEST_NEW_SESSION_RACE', '').split(',') and n not in state: create(n, '/elsewhere'); save()
     if n in state: sys.stderr.write('duplicate session: %s\n' % n); sys.exit(1)
     if '-d' not in a: sys.stderr.write('open terminal failed: not a terminal\n'); sys.exit(1)
     create(n, a[a.index('-c')+1] if '-c' in a else ''); save(); sys.exit(0)
-if c == 'kill-session': del state[target(a.index('-t')+1)]; save(); sys.exit(0)
+if c == 'kill-session':
+    n = target(a.index('-t')+1)
+    if os.environ.get('TEST_KILL_FAIL'): sys.stderr.write('mock tmux: kill-session refused\n'); sys.exit(1)
+    del state[n]; save(); sys.exit(0)
 if c == 'kill-server': state.clear(); buffers.clear(); save(); sys.exit(0)
 if c == 'display-message':
     n = target(a.index('-t')+1) if '-t' in a else None; key = a[-1]; s = state.get(n, {})
@@ -127,6 +134,7 @@ if c == 'delete-buffer':
     del buffers[n]; save(); sys.exit(0)
 if c == 'paste-buffer':
     target(a.index('-t')+1)
+    if os.environ.get('TEST_PASTE_FAIL'): sys.stderr.write('mock tmux: paste refused\n'); sys.exit(1)     # the buffer stays, as in tmux
     if '-d' in a and '-b' in a: buffers.pop(buffer_name(), None); save()
     sys.exit(0)
 if c in ('send-keys', 'capture-pane'):
@@ -323,6 +331,18 @@ class PortTests(unittest.TestCase):
         self.assertEqual(self.state()[self.session]['options'], {})      # the winner of the race is left alone
         self.assertEqual(self.tag('@orchestra-session-type', self.session+'-2'), 'worktree')
         self.assertEqual([c for c in self.tmux_calls() if 'kill-session' in c], [])
+    def test_two_lost_races_count_from_the_preferred_label(self):
+        self.env['TEST_NEW_SESSION_RACE'] = self.session+','+self.session+'-2'
+        self.spawn('--agent', 'codex')
+        self.assertEqual(self.calls()[-1]['env']['ORCHESTRA_SESSION'], self.session+'-3')
+        self.assertEqual(sorted(self.state()), [self.session, self.session+'-2', self.session+'-3'])
+        self.assertEqual(self.state()[self.session+'-2']['options'], {})
+    def test_third_collision(self):
+        self.foreign(self.session); self.foreign(self.session+'-2')
+        self.spawn('--agent', 'codex')
+        self.assertEqual(self.calls()[-1]['env']['ORCHESTRA_SESSION'], self.session+'-3')
+        self.assertEqual(self.tag('@orchestra-branch', self.session+'-3'), 'feature/test')
+        self.assertEqual([n for n in self.state() if self.state()[n]['options']], [self.session+'-3'])
     def test_tags_are_set_before_anything_else_touches_the_session(self):
         self.spawn('--agent', 'codex'); calls = self.tmux_calls()
         i = next(i for i, c in enumerate(calls) if 'new-session' in c and self.session in c)
@@ -366,11 +386,16 @@ class PortTests(unittest.TestCase):
         self.env['TEST_PANE_ALIVE'] = '1'
         self.foreign(self.session)
         half = dict(self.player_tags(spawner='orchestra')); del half['@orchestra-session-type']; self.foreign('half-tagged', half)
+        self.foreign('repo-shell', {'@orchestra-spawner': 'kirby', '@orchestra-repo': str(self.repo.resolve()), '@orchestra-session-type': 'shell'})   # fully tagged, not a player
         before = self.state()
-        for name in (self.session, 'half-tagged'):
+        for name in (self.session, 'half-tagged', 'repo-shell'):
             self.assertNotEqual(self.orch('kill.sh', name, ok=False).returncode, 0)
             self.assertNotEqual(self.orch('adopt.sh', name, '--orchestrator', 'tmux:p', ok=False).returncode, 0)
         self.assertNotIn('kill-session', self.tmux_log()); self.assertNotIn('send-keys', self.tmux_log()); self.assertEqual(self.state(), before)
+    def test_kill_reports_a_refused_kill(self):
+        self.spawn('--agent', 'codex'); self.env['TEST_KILL_FAIL'] = '1'
+        x = self.orch('kill.sh', self.session, ok=False); self.assertNotEqual(x.returncode, 0); self.assertIn('could not kill', x.stderr); self.assertNotIn('killed', x.stdout)
+        self.assertIn(self.session, self.state())
     def test_sessions_scoped_by_repo_tag(self):
         self.env['TEST_PANE_ALIVE'] = '1'; self.spawn('--agent', 'codex')
         repo2 = self.base/'other/repo'; self.git_init(repo2); self.spawn('--agent', 'codex', repo=repo2)
@@ -384,7 +409,10 @@ class PortTests(unittest.TestCase):
         self.assertEqual(names(json.loads(self.orch('sessions.sh', '--json', cwd=self.base).stdout)), sorted([self.session, self.session+'-2', 'tab-made-elsewhere']))   # outside a repo: everything
         text = self.orch('sessions.sh', '--all').stdout.splitlines()
         self.assertEqual(text[0].split(), ['STATE', 'QUIET', 'REPO', 'SESSION', 'BRANCH', 'AGENT', 'ORCHESTRATOR', 'LAST-REPORT', 'TITLE'])
-        self.assertTrue(any(self.session+'-2' in l and 'feature/test' in l for l in text[1:]), text); self.assertNotIn('stray', '\n'.join(text)); self.assertNotIn('repo-shell', '\n'.join(text))
+        self.assertTrue(any(l.split()[2:5] == [str(repo2.resolve()), self.session+'-2', 'feature/test'] for l in text[1:]), text)   # REPO is the tag value, as in JSON
+        self.assertNotIn('stray', '\n'.join(text)); self.assertNotIn('repo-shell', '\n'.join(text))
+        self.env['TEST_PANE_COMMAND'] = 'we"ird\\cmd'
+        rows = self.sessions('--all'); self.assertEqual(rows[0]['cmd'], 'we"ird\\cmd'); self.assertEqual(rows[0]['state'], 'idle')
         text = self.orch('sessions.sh', '--repo', str(self.repo)).stdout.splitlines()
         self.assertEqual(text[0].split(), ['STATE', 'QUIET', 'SESSION', 'BRANCH', 'AGENT', 'ORCHESTRATOR', 'LAST-REPORT', 'TITLE'])
         self.assertTrue(any(l.split()[2:4] == ['tab-made-elsewhere', 'feature/other'] for l in text[1:]), text)
@@ -472,6 +500,7 @@ class PortTests(unittest.TestCase):
         self.clear_log(); x = self.report('PROGRESS', 'derived', env=inside); self.assertIn('queued for', x.stdout)
         self.assertEqual(self.calls()[-1]['args'][:5], ['queue', '--thread', ID, '--message', '[player label-chosen-elsewhere] PROGRESS: derived'])
         self.assertRegex(self.tag('@orchestra-last-report', 'label-chosen-elsewhere'), '^PROGRESS '+STAMP+'$'); self.assertIn('"-S", "/tmp/custom-socket", "set-option"', self.tmux_log())
+        self.assertIn('["-u", "-S", "/tmp/custom-socket", "display-message"', self.tmux_log())        # the session lookup goes through tmux_on too
         x = self.report('DONE', 'derived fail', env=dict(inside, TEST_CLI_EXIT='1'), ok=False)
         self.assertIn('recorded on session label-chosen-elsewhere', x.stderr); self.assertIn('DONE: derived fail', self.tag('@orchestra-undelivered', 'label-chosen-elsewhere'))
     def test_help_text_is_comment_only(self):
@@ -482,6 +511,9 @@ class PortTests(unittest.TestCase):
         for s in ('kill.sh', 'adopt.sh', 'send.sh', 'screen.sh'):
             x = self.run_cmd(['bash', self.script(s)], ok=False); self.assertEqual(x.returncode, 2, s); self.assertIn('Usage: '+s, x.stderr)
             self.assertFalse([l for l in x.stderr.splitlines() if l.startswith(('set ', '.', '['))], s+'\n'+x.stderr[-200:])
+            self.assertIn('--repo', x.stderr, s)                                 # every usage text names its --repo option
+        x = self.orch('sessions.sh', '--help'); self.assertIn('Usage: sessions.sh', x.stdout)
+        self.assertFalse([l for l in x.stdout.splitlines() if not l.startswith('#')], x.stdout[-200:])
     def test_orchestrator_query_is_read_only(self):
         self.spawn('--agent', 'codex')
         self.assertEqual(self.report('--orchestrator').stdout.strip(), 'codex:'+ID)
@@ -501,6 +533,11 @@ class PortTests(unittest.TestCase):
         self.run_cmd(['tmux', 'kill-session', '-t', '=parent'])
         x = self.report('DONE', 'gone', env=self.player_env(ORCHESTRA_SOCKET='/tmp/custom-socket'), ok=False)
         self.assertIn('is gone', x.stderr); self.assertIn('DONE: gone', self.tag('@orchestra-undelivered'))
+    def test_failed_paste_leaves_no_buffer(self):
+        self.env['TEST_PANE_ALIVE'] = '1'; self.spawn('--agent', 'claude', '--orchestrator', 'tmux:parent'); self.foreign('parent')
+        self.env['TEST_PASTE_FAIL'] = '1'
+        x = self.orch('send.sh', self.session, 'hello', ok=False); self.assertNotEqual(x.returncode, 0); self.assertEqual(self.buffers(), {})
+        x = self.report('DONE', 'lost', ok=False); self.assertIn('NOT DELIVERED', x.stderr); self.assertEqual(self.buffers(), {})
     def test_shell_owned_parent_falls_back(self):
         self.spawn('--agent', 'claude', '--orchestrator', 'tmux:parent'); self.foreign('parent')
         self.env['TEST_PANE_COMMAND'] = 'bash'; x = self.report('QUESTION', 'decision', ok=False)

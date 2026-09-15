@@ -9,7 +9,7 @@
 # worktree, whoever created it; untagged sessions and Kirby's shell/agent tabs are never listed.
 # Scope: players whose @orchestra-repo is this repo (--repo <path>, else the cwd's repo) when
 # the cwd is inside a git repo; every player on the machine (--all) otherwise. --all adds a
-# REPO column. SESSION is the tmux session name (a label, which every other script accepts);
+# REPO column (the @orchestra-repo tag value, as in --json). SESSION is the tmux session name (a label, which every other script accepts);
 # BRANCH, AGENT, ORCHESTRATOR and LAST-REPORT come from the @orchestra-branch, -agent,
 # -orchestrator and -last-report tags (empty when unset). --json gives "session" and "name"
 # (both the tmux name), "repo", "branch", "state", "cmd", "quiet_s", "agent", "orchestrator",
@@ -30,7 +30,7 @@ QUIET=3
 ALL=0; SAMPLE=0; JSON=0
 while [ $# -gt 0 ]; do case "$1" in
   --all) ALL=1;; --repo) ORCH_REPO="$2"; shift;; --quiet) QUIET="$2"; shift;; --sample) SAMPLE="$2"; shift;; --json) JSON=1;;
-  -h|--help) sed -n '2,25p' "$0"; exit 0;;
+  -h|--help) sed -n '2,24p' "$0"; exit 0;;
   *) echo "sessions.sh: unknown argument $1" >&2; exit 0;; esac; shift; done
 command -v tmux >/dev/null || { echo "tmux is not installed"; exit 0; }
 
@@ -70,11 +70,11 @@ while IFS= read -r line; do
   repo="${tag_repo:-$(repo_of_path "$path")}"
   if [ $JSON = 1 ]; then
     [ $first = 1 ] || printf ','; first=0
-    printf '{"session":%s,"name":%s,"repo":%s,"branch":%s,"state":"%s","cmd":"%s","quiet_s":%s,"agent":%s,"orchestrator":%s,"last_report":%s,"title":%s}' \
-      "$(json_str "$name")" "$(json_str "$name")" "$(json_str "$repo")" "$(json_str "$branch")" "$state" "$cmd" "$quiet" "$(json_str "$agent")" "$(json_str "$orch")" "$(json_str "$last")" "$(json_str "$title")"
+    printf '{"session":%s,"name":%s,"repo":%s,"branch":%s,"state":%s,"cmd":%s,"quiet_s":%s,"agent":%s,"orchestrator":%s,"last_report":%s,"title":%s}' \
+      "$(json_str "$name")" "$(json_str "$name")" "$(json_str "$repo")" "$(json_str "$branch")" "$(json_str "$state")" "$(json_str "$cmd")" "$quiet" "$(json_str "$agent")" "$(json_str "$orch")" "$(json_str "$last")" "$(json_str "$title")"
   elif [ $ALL = 1 ]; then
-    [ $rows = 1 ] && printf '%-5s %6s  %-32s %-40s %-32s %-8s %-42s %-26s %s\n' STATE QUIET REPO SESSION BRANCH AGENT ORCHESTRATOR LAST-REPORT TITLE
-    printf '%-5s %5ss  %-32s %-40s %-32s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$(printf %s "${repo/#$HOME\//}" | cut -c1-32)" "$name" "$(printf %s "$branch" | cut -c1-32)" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"
+    [ $rows = 1 ] && printf '%-5s %6s  %-40s %-40s %-32s %-8s %-42s %-26s %s\n' STATE QUIET REPO SESSION BRANCH AGENT ORCHESTRATOR LAST-REPORT TITLE
+    printf '%-5s %5ss  %-40s %-40s %-32s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$repo" "$name" "$(printf %s "$branch" | cut -c1-32)" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"
   else
     [ $rows = 1 ] && printf '%-5s %6s  %-40s %-32s %-8s %-42s %-26s %s\n' STATE QUIET SESSION BRANCH AGENT ORCHESTRATOR LAST-REPORT TITLE
     printf '%-5s %5ss  %-40s %-32s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$name" "$(printf %s "$branch" | cut -c1-32)" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"

@@ -15,7 +15,8 @@ session="$1"; shift
 if [ "${1:-}" = "--repo" ]; then ORCH_REPO="$2"; shift 2; fi
 [ $# -eq 0 ] || { sed -n '2,11p' "$0" >&2; exit 2; }
 target="$(resolve_session "$session")" || exit 1
-is_player_session "$target" || { echo "kill.sh: $target is not a player session (no $TAG_SPAWNER/$TAG_SESSION_TYPE tags); nothing killed" >&2; exit 1; }
+is_player_session "$target" || { echo "kill.sh: $target is not a player session (its tags do not say $TAG_SPAWNER + $TAG_SESSION_TYPE $SESSION_TYPE_WORKTREE); nothing killed" >&2; exit 1; }
 session_exists "$target" || exit 1
-tmux kill-session -t "=$target" && echo "killed $target"
-tmux delete-buffer -b "$(prompt_buffer_name "$target")" 2>/dev/null; true
+tmux kill-session -t "=$target" || { echo "kill.sh: tmux could not kill $target" >&2; exit 1; }
+tmux delete-buffer -b "$(prompt_buffer_name "$target")" 2>/dev/null || :
+echo "killed $target"

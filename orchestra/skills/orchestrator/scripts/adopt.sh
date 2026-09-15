@@ -20,7 +20,7 @@ while [ $# -gt 0 ]; do case "$1" in
 TEXT="$*"
 ORCH="$(resolve_orchestrator "$ORCH")" || exit 2
 target="$(resolve_session "$session")" || exit 1
-is_player_session "$target" || { echo "adopt.sh: $target is not a player session" >&2; exit 1; }
+is_player_session "$target" || { echo "adopt.sh: $target is not a player session (its tags do not say $TAG_SPAWNER + $TAG_SESSION_TYPE $SESSION_TYPE_WORKTREE); nothing changed" >&2; exit 1; }
 session_exists "$target" || exit 1
 tt="$(tmux_target "$target")"
 [ "$(tmux display-message -p -t "$tt" '#{pane_dead}')" = 0 ] || { echo "adopt.sh: $target has a dead pane; use spawn.sh --resume instead" >&2; exit 1; }

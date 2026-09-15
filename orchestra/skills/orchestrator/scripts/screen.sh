@@ -7,7 +7,7 @@
 #                last output often sits just above the screen, so dead panes default to 40)
 #   --repo P     resolve a branch in that repo (an exact session name needs no repo)
 . "$(dirname "$(realpath "$0")")/_lib.sh"
-[ $# -ge 1 ] || { sed -n '2,7p' "$0" >&2; exit 2; }
+[ $# -ge 1 ] || { sed -n '2,8p' "$0" >&2; exit 2; }
 session="$1"; shift
 LINES=0; HISTORY=0
 while [ $# -gt 0 ]; do case "$1" in

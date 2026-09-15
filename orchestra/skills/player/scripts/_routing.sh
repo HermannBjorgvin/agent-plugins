@@ -71,7 +71,7 @@ player_session_context() {
   player_session="${ORCHESTRA_SESSION:-}"; player_socket="${ORCHESTRA_SOCKET:-}"
   if [ -z "$player_session" ] && [ -n "${TMUX:-}" ]; then
     player_socket="${TMUX%%,*}"
-    player_session="$(tmux -S "$player_socket" display-message -p '#S' 2>/dev/null)" || player_session=""
+    player_session="$(tmux_on "$player_socket" display-message -p '#S' 2>/dev/null)" || player_session=""
   fi
   [ -n "$player_session" ]
 }
@@ -95,7 +95,7 @@ resolve_orchestrator() {
   elif [[ -z "${CLAUDECODE:-}" && -n "${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}" ]]; then
     normalize_target "codex:${CODEX_THREAD_ID:-$CODEX_SESSION_ID}"
   elif [[ -n "${TMUX:-}" ]]; then
-    normalize_target "tmux:$(tmux display-message -p '#S')"
+    normalize_target "tmux:$(tmux_on "" display-message -p '#S')"
   else
     echo 'Cannot identify orchestrator; pass --orchestrator codex:<thread-id> or tmux:<session>.' >&2
     return 2

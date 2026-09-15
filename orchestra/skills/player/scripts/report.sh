@@ -62,7 +62,7 @@ pane_owned_by_agent "$sock" "$target" || fallback "a shell owns $target now, not
 # the paste before Enter.
 tt="$(tmux_target "$target")"
 printf '%s' "$msg" | t load-buffer -b "player-$$" - || fallback "tmux could not load the message"
-t paste-buffer -p -d -b "player-$$" -t "$tt" || fallback "tmux could not paste into $target"
+t paste-buffer -p -d -b "player-$$" -t "$tt" || { t delete-buffer -b "player-$$" 2>/dev/null; fallback "tmux could not paste into $target"; }
 sleep 0.3
 t send-keys -t "$tt" Enter || fallback "tmux could not submit the message in $target"
 delivered

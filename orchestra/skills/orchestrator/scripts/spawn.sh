@@ -177,9 +177,9 @@ if [ "$EXISTING" = none ]; then
   while :; do
     name="$(free_session_name "$ORCH_SOCK" "$label")"
     env "${strip[@]}" tmux -S "$ORCH_SOCK" new-session -d -s "$name" -c "$root/$dir" -x 220 -y 50 && break
-    # Lost a race for the name (it exists now): try the next suffix. Anything else is fatal.
+    # Lost a race for the name (it exists now): probe again from the preferred label, so a second
+    # lost race yields -3, not -2-2. Anything else is fatal.
     t has-session -t "=$name" 2>/dev/null || { echo "spawn.sh: tmux could not create session $name" >&2; exit 1; }
-    label="$name"
   done
   CREATED=1
   tt="$(tmux_target "$name")"
