@@ -7,12 +7,14 @@
 #                 [--agent claude|codex|...] [<text…>]
 # Inspect screen.sh first and adopt only players idle at their input prompt. The pane must be
 # alive with an agent (not a shell) at the terminal; otherwise nothing is changed or typed.
-# The target is written to the session's @orchestra-orchestrator tag, which report.sh reads;
-# the player's own ORCHESTRA_SOCKET already names this server. Sessions without an
-# @orchestra-agent tag default to Claude.
+# <session> is a branch (resolved in this repo, --repo, or uniquely across repos) or an exact
+# tmux session name; only a session tagged as a player (@orchestra-spawner set,
+# @orchestra-session-type worktree) is adopted, whoever created it. The target is written to the
+# session's @orchestra-orchestrator tag, which report.sh reads; the player's own ORCHESTRA_SOCKET
+# already names this server. Sessions without an @orchestra-agent tag default to Claude.
 set -eu
 . "$(dirname "$(realpath "$0")")/_lib.sh"
-[ $# -ge 1 ] || { sed -n '2,12p' "$0" >&2; exit 2; }
+[ $# -ge 1 ] || { sed -n '2,14p' "$0" >&2; exit 2; }
 session="$1"; shift; ORCH=""; AGENT=""
 while [ $# -gt 0 ]; do case "$1" in
   --repo) ORCH_REPO="$2"; shift;; --orchestrator) ORCH="$2"; shift;;
@@ -23,7 +25,7 @@ target="$(resolve_session "$session")" || exit 1
 is_player_session "$target" || { echo "adopt.sh: $target is not a player session (its tags do not say $TAG_SPAWNER + $TAG_SESSION_TYPE $SESSION_TYPE_WORKTREE); nothing changed" >&2; exit 1; }
 session_exists "$target" || exit 1
 tt="$(tmux_target "$target")"
-[ "$(tmux display-message -p -t "$tt" '#{pane_dead}')" = 0 ] || { echo "adopt.sh: $target has a dead pane; use spawn.sh --resume instead" >&2; exit 1; }
+[ "$(tmux_on "" display-message -p -t "$tt" '#{pane_dead}')" = 0 ] || { echo "adopt.sh: $target has a dead pane; use spawn.sh --resume instead" >&2; exit 1; }
 pane_owned_by_agent "" "$target" || { echo "adopt.sh: no agent is reading $target (a shell owns the pane); nothing changed" >&2; exit 1; }
 [ -n "$AGENT" ] || AGENT="$(tag_get "" "$target" "$TAG_AGENT")"
 case "${AGENT:-claude}" in codex) invocation='$player';; *) invocation="$(claude_player_invocation)";; esac

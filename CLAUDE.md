@@ -103,6 +103,8 @@ this table; keep it identical in both repositories:
 | `/x/agent-plugins` | worktree | `a`×250 | `agent-plugins-` + `a`×181 + `-1fad` |
 | `/x/r` | worktree | `a/`×125 | `r-` + `a-`×96 + `a-6e0f` |
 | `/x/r` | worktree | `a.`×125 | `r-` + `a-`×96 + `a-b373` |
+| `/x/` + `b`×220 | shell | | `b`×195 + `-930d` |
+| `/x/` + `b`×220 | agent | | `b`×195 + `-9fb6` |
 
 Every lookup resolves through the tags: a player is a session with `@orchestra-spawner` set
 and `@orchestra-session-type` `worktree`; its identity is (`@orchestra-repo`,

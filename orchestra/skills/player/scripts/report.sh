@@ -24,7 +24,7 @@ if [ "${1:-}" = "--orchestrator" ]; then
   [ -n "$session" ] || { echo 'report.sh: neither ORCHESTRA_SESSION nor TMUX names a player session; not running in a player pane' >&2; exit 2; }
   target="$(tag_get "$sock" "$session" "$TAG_ORCHESTRATOR")"; printf '%s\n' "${target:-<unset>}"; exit
 fi
-[ $# -ge 2 ] || { sed -n '2,15p' "$0" >&2; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,17p' "$0" >&2; exit 2; }
 kind="$1"; shift
 case "$kind" in PROGRESS|QUESTION|BLOCKED|DONE) ;; *) echo "report.sh: KIND must be PROGRESS, QUESTION, BLOCKED or DONE" >&2; exit 2;; esac
 msg="[player $name] $kind: $*"
@@ -62,7 +62,8 @@ pane_owned_by_agent "$sock" "$target" || fallback "a shell owns $target now, not
 # the paste before Enter.
 tt="$(tmux_target "$target")"
 printf '%s' "$msg" | t load-buffer -b "player-$$" - || fallback "tmux could not load the message"
-t paste-buffer -p -d -b "player-$$" -t "$tt" || { t delete-buffer -b "player-$$" 2>/dev/null; fallback "tmux could not paste into $target"; }
+# errexit is live inside the brace group: the cleanup must not be able to exit before fallback runs.
+t paste-buffer -p -d -b "player-$$" -t "$tt" || { t delete-buffer -b "player-$$" 2>/dev/null || :; fallback "tmux could not paste into $target"; }
 sleep 0.3
 t send-keys -t "$tt" Enter || fallback "tmux could not submit the message in $target"
 delivered

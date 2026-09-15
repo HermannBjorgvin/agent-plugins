@@ -121,10 +121,6 @@ resolve_session() {
 # Exact-match check for a resolved name; prints a uniform error.
 session_exists() { tmux has-session -t "=$1" 2>/dev/null || { echo "no such session: $1" >&2; return 1; }; }
 
-# A pane's repo, for listing: a player worktree lives at <root>/.claude/worktrees/<x>,
-# so strip that; otherwise the path itself. Printed relative to $HOME.
-repo_of_path() { local p="${1%%/.claude/worktrees/*}"; printf %s "${p/#$HOME\//}"; }
-
 # Visible pane text, trailing whitespace trimmed, runs of blank lines collapsed.
 screen_text() { tmux capture-pane -p -t "$1" 2>/dev/null | sed -e 's/[[:space:]]*$//' | awk 'NF{blank=0} !NF{blank++} blank<2'; }
 
@@ -148,7 +144,7 @@ PARENT_SESSION_MARKERS=(CLAUDECODE CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_SESSION
 paste_into() {
   local session="$1" text="$2"; shift 2
   printf '%s' "$text" | tmux "$@" load-buffer -b "orch-$$" - || return 1
-  tmux "$@" paste-buffer -p -d -b "orch-$$" -t "$(tmux_target "$session")" || { tmux "$@" delete-buffer -b "orch-$$" 2>/dev/null; return 1; }
+  tmux "$@" paste-buffer -p -d -b "orch-$$" -t "$(tmux_target "$session")" || { tmux "$@" delete-buffer -b "orch-$$" 2>/dev/null || :; return 1; }
   sleep 0.3
   tmux "$@" send-keys -t "$(tmux_target "$session")" Enter
 }

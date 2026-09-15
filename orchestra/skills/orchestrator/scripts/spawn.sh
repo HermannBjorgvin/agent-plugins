@@ -71,7 +71,7 @@ fi
 ORCH="$(resolve_orchestrator "$ORCH")" || exit 2
 ORCH_SOCK="${TMUX:-}"; ORCH_SOCK="${ORCH_SOCK%%,*}"
 ORCH_SOCK="${ORCH_SOCK:-${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/default}"
-t() { tmux -S "$ORCH_SOCK" "$@"; }
+t() { tmux_on "$ORCH_SOCK" "$@"; }        # -u -S: reads are exact in any locale
 tag() { tag_set "$ORCH_SOCK" "$name" "$@"; }
 
 LAUNCHER="$(realpath "$ORCH_SCRIPTS/_launch.sh")"
