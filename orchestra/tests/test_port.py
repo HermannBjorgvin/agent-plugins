@@ -391,8 +391,9 @@ class PortTests(unittest.TestCase):
         self.foreign(self.session)
         half = dict(self.player_tags(spawner='orchestra')); del half['@orchestra-session-type']; self.foreign('half-tagged', half)
         self.foreign('repo-shell', {'@orchestra-spawner': 'kirby', '@orchestra-repo': str(self.repo.resolve()), '@orchestra-session-type': 'shell'})   # fully tagged, not a player
+        norepo = self.player_tags(spawner='orchestra'); del norepo['@orchestra-repo']; self.foreign('no-repo-tag', norepo)
         before = self.state()
-        for name in (self.session, 'half-tagged', 'repo-shell'):
+        for name in (self.session, 'half-tagged', 'repo-shell', 'no-repo-tag'):
             self.assertNotEqual(self.orch('kill.sh', name, ok=False).returncode, 0)
             self.assertNotEqual(self.orch('adopt.sh', name, '--orchestrator', 'tmux:p', ok=False).returncode, 0)
         self.assertNotIn('kill-session', self.tmux_log()); self.assertNotIn('send-keys', self.tmux_log()); self.assertEqual(self.state(), before)
@@ -414,7 +415,7 @@ class PortTests(unittest.TestCase):
         self.assertEqual(names(json.loads(self.orch('sessions.sh', '--json', cwd=self.base).stdout)), sorted([self.session, self.session+'-2', 'tab-made-elsewhere']))   # outside a repo: everything
         text = self.orch('sessions.sh', '--all').stdout.splitlines()
         self.assertEqual(text[0].split(), ['STATE', 'QUIET', 'REPO', 'SESSION', 'BRANCH', 'AGENT', 'ORCHESTRATOR', 'LAST-REPORT', 'TITLE'])
-        self.assertTrue(any(l.split()[2:5] == [str(repo2.resolve()), self.session+'-2', 'feature/test'] for l in text[1:]), text)   # REPO is the tag value, as in JSON
+        self.assertTrue(any(l.split()[2:5] == [str(repo2.resolve())[:40], self.session+'-2', 'feature/test'] for l in text[1:]), text)   # REPO is the tag value (cut to 40; JSON has it whole)
         self.assertNotIn('stray', '\n'.join(text)); self.assertNotIn('repo-shell', '\n'.join(text)); self.assertNotIn('no-repo-tag', '\n'.join(text))
         self.env['TEST_PANE_COMMAND'] = 'we"ird\\cmd'
         rows = self.sessions('--all'); self.assertEqual(rows[0]['cmd'], 'we"ird\\cmd'); self.assertEqual(rows[0]['state'], 'idle')

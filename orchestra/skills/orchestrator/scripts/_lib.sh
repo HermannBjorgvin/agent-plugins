@@ -81,11 +81,12 @@ TAB=$'\t'
 list_sessions_tagged() {
   tmux_on "" list-sessions -F "#{session_name}${TAB}#{session_created}${TAB}#{session_path}${TAB}#{$TAG_SPAWNER}${TAB}#{$TAG_REPO}${TAB}#{$TAG_SESSION_TYPE}${TAB}#{$TAG_BRANCH}" 2>/dev/null || true
 }
-# Player sessions = spawner set AND session-type worktree, whoever created them (Kirby's worktree
-# sessions included). Same tab-separated fields as above. A session whose name we would have
-# chosen but that lacks the tags is foreign: never attached, killed, adopted or listed.
+# Player sessions = spawner set, repo set AND session-type worktree, whoever created them (Kirby's
+# worktree sessions included). Same tab-separated fields as above. This is the one definition of
+# "ours" for listing, resolving, killing and adopting: a session whose name we would have chosen
+# but that lacks any of these tags is foreign, never attached, killed, adopted or listed.
 player_sessions() {
-  list_sessions_tagged | awk -F "$TAB" -v type="$SESSION_TYPE_WORKTREE" '$4 != "" && $6 == type'
+  list_sessions_tagged | awk -F "$TAB" -v type="$SESSION_TYPE_WORKTREE" '$4 != "" && $5 != "" && $6 == type'
 }
 all_player_sessions() { player_sessions | cut -f1; }
 is_player_session() { player_sessions | cut -f1 | grep -qxF -- "$1"; }

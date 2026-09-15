@@ -10,8 +10,8 @@
 # Kirby's shell/agent tabs are never listed.
 # Scope: players whose @orchestra-repo is this repo (--repo <path>, else the cwd's repo) when
 # the cwd is inside a git repo; every player on the machine (--all) otherwise. --all adds a
-# REPO column (the @orchestra-repo tag value, cut to 40 characters; --json has it whole).
-# SESSION is the tmux session name (a label, which every other script accepts);
+# REPO column (the @orchestra-repo tag value, cut to 40 characters like SESSION; --json has
+# both whole). SESSION is the tmux session name (a label, which every other script accepts);
 # BRANCH, AGENT, ORCHESTRATOR and LAST-REPORT come from the @orchestra-branch, -agent,
 # -orchestrator and -last-report tags (empty when unset). --json gives "session" and "name"
 # (both the tmux name), "repo", "branch", "state", "cmd", "quiet_s", "agent", "orchestrator",
@@ -77,10 +77,10 @@ while IFS= read -r line; do
       "$(json_str "$name")" "$(json_str "$name")" "$(json_str "$repo")" "$(json_str "$branch")" "$(json_str "$state")" "$(json_str "$cmd")" "$quiet" "$(json_str "$agent")" "$(json_str "$orch")" "$(json_str "$last")" "$(json_str "$title")"
   elif [ $ALL = 1 ]; then
     [ $rows = 1 ] && printf '%-5s %6s  %-40s %-40s %-32s %-8s %-42s %-26s %s\n' STATE QUIET REPO SESSION BRANCH AGENT ORCHESTRATOR LAST-REPORT TITLE
-    printf '%-5s %5ss  %-40s %-40s %-32s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$(printf %s "$repo" | cut -c1-40)" "$name" "$(printf %s "$branch" | cut -c1-32)" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"
+    printf '%-5s %5ss  %-40s %-40s %-32s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$(printf %s "$repo" | cut -c1-40)" "$(printf %s "$name" | cut -c1-40)" "$(printf %s "$branch" | cut -c1-32)" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"
   else
     [ $rows = 1 ] && printf '%-5s %6s  %-40s %-32s %-8s %-42s %-26s %s\n' STATE QUIET SESSION BRANCH AGENT ORCHESTRATOR LAST-REPORT TITLE
-    printf '%-5s %5ss  %-40s %-32s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$name" "$(printf %s "$branch" | cut -c1-32)" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"
+    printf '%-5s %5ss  %-40s %-32s %-8s %-42s %-26s %s\n' "$state" "$quiet" "$(printf %s "$name" | cut -c1-40)" "$(printf %s "$branch" | cut -c1-32)" "$agent" "$(printf %s "$orch" | cut -c1-42)" "$last" "$(printf %s "$title" | cut -c1-40)"
   fi
 done < <(tmux_on "" list-panes -a -F "$FORMAT" 2>/dev/null || true)
 [ $JSON = 1 ] && printf ']\n'
