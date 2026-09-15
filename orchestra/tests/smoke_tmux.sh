@@ -87,14 +87,17 @@ check "last-report tag set" "tag $S1 @orchestra-last-report | grep -Eq '^PROGRES
 check "--orchestrator prints the tag" "[ \"\$(player --orchestrator)\" = tmux:parent ]"
 (cd "$W1" && player --orchestrator tmux:other >/dev/null 2>&1); check "player cannot rebind itself" "[ $? = 2 ] && [ \"\$(tag $S1 @orchestra-orchestrator)\" = tmux:parent ]"
 (unset TMUX; tm kill-session -t "=parent")
-(cd "$W1" && player DONE "gone parent") >"$T/report2.out" 2>&1
-check "gone parent -> nonzero, recorded on the session" "[ $? = 1 ] && grep -q 'NOT DELIVERED' '$T/report2.out' && grep -q 'recorded on session $S1' '$T/report2.out'"
-check "undelivered tag holds the report" "tag $S1 @orchestra-undelivered | grep -Eq '^$STAMP \[player $S1\] DONE: gone parent\$'"
-(cd "$W1" && player BLOCKED "second"$'\n'"line") >/dev/null 2>&1
-check "undelivered appends newline-separated lines" "[ \"\$(tag $S1 @orchestra-undelivered | wc -l)\" = 2 ] && tag $S1 @orchestra-undelivered | tail -n1 | grep -Eq '^$STAMP \[player $S1\] BLOCKED: second line\$'"
+tm show-options -t "=$S1:" > "$T/options-before-report"
+(cd "$W1" && player DONE "gone parent") >"$T/report2.out" 2>"$T/report2.err"
+check "gone parent -> nonzero, error on stderr" "[ $? = 1 ] && grep -qx 'report.sh: delivery failed' '$T/report2.err' && [ ! -s '$T/report2.out' ]"
+check "error includes target, reason and report" "grep -qx 'Target: tmux:parent' '$T/report2.err' && grep -q '^Reason: orchestrator session parent is gone' '$T/report2.err' && grep -qF 'Report: [player $S1] DONE: gone parent' '$T/report2.err'"
+(cd "$W1" && player BLOCKED "second"$'\n'"line") >"$T/report-multiline.out" 2>"$T/report-multiline.err"
+check "failed report preserves multiple lines" "[ $? = 1 ] && grep -qF 'Report: [player $S1] BLOCKED: second' '$T/report-multiline.err' && grep -qx 'line' '$T/report-multiline.err'"
 check "last-report unchanged by refused reports" "tag $S1 @orchestra-last-report | grep -q '^PROGRESS '"
-(cd "$W1" && unset TMUX TMUX_PANE && ORCHESTRA_SOCKET="$SOCK" bash "$P/report.sh" DONE unrecordable) >"$T/report3.out" 2>&1   # neither ORCHESTRA_SESSION nor TMUX
-check "no player session -> NOT RECORDED surfaced" "grep -q 'NOT RECORDED' '$T/report3.out' && grep -q 'DONE: unrecordable' '$T/report3.out'"
+tm show-options -t "=$S1:" > "$T/options-after-report"
+check "failed deliveries do not change session options" "cmp -s '$T/options-before-report' '$T/options-after-report'"
+(cd "$W1" && unset TMUX TMUX_PANE && ORCHESTRA_SOCKET="$SOCK" bash "$P/report.sh" DONE "no session") >"$T/report3.out" 2>"$T/report3.err"   # neither ORCHESTRA_SESSION nor TMUX
+check "no player session -> error still includes original report" "[ $? = 1 ] && grep -qx 'Target: <unknown>' '$T/report3.err' && grep -q 'DONE: no session' '$T/report3.err'"
 check "no mailbox written" "[ ! -e '$HOME/.claude/orchestrator-mail' ] || [ -z \"\$(find '$HOME/.claude/orchestrator-mail' -newer '$T/task.txt' -type f 2>/dev/null)\" ]"
 (unset TMUX TMUX_PANE; tm new-session -d -s parent -x 120 -y 30 -- "$T/bin/claude")
 

@@ -125,10 +125,12 @@ compatibility shims for the former git-dir files and mailbox directory.
   `@orchestra-branch` (unsanitized branch, worktree sessions only; these four are written by
   the creator only), `@orchestra-orchestrator` (`codex:<uuid>`|`tmux:<session>`), `@orchestra-agent`
   (`claude`|`codex`|`gemini`|`copilot`|`opencode`|`custom`), `@orchestra-launching` (`1` while
-  the placeholder pane exists), `@orchestra-last-report` (`<KIND> <ISO-8601 UTC>`),
-  `@orchestra-undelivered` (`<ISO-8601 UTC> <message>` lines, oldest first, under 8 KiB).
-  Absent means unset; never write a sentinel. Values contain no tabs; only
-  `@orchestra-undelivered` contains newlines. Target sessions as `=<name>:` (exact).
+  the placeholder pane exists), `@orchestra-last-report` (`<KIND> <ISO-8601 UTC>`).
+  Absent means unset; never write a sentinel. Values contain no tabs or newlines.
+  Target sessions as `=<name>:` (exact).
+- Report failures: `report.sh` exits nonzero and prints the destination, reason, and complete
+  original report to stderr. The player surfaces the failure and report in its response;
+  inspect before retrying because a paste may have succeeded before submission failed.
 - Pane environment (injected by `spawn.sh`): `ORCHESTRA_SESSION` (the session name, used as
   is), `ORCHESTRA_SOCKET` (the tmux server socket holding the session; the pane's own tmux
   environment is a scratch server at `/tmp/orchestra-agent-tmux`), `ORCHESTRA_MODE`,

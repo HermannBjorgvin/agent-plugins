@@ -6,8 +6,8 @@
 # Every fact about a player session lives on the session itself, as a user option that dies with
 # the session and is readable by anyone who can reach the server: no files. Set with
 # `set-option -t '=name:' @orchestra-agent claude`; read with `show-options -qv` (empty when unset)
-# or as #{@orchestra-agent} in a format. Absent means unset; no sentinels. Values never contain a
-# tab; only @orchestra-undelivered contains newlines.
+# or as #{@orchestra-agent} in a format. Absent means unset; no sentinels. Values contain no
+# tabs or newlines.
 TAG_SPAWNER=@orchestra-spawner            # kirby | orchestra: whichever program created the session
 TAG_REPO=@orchestra-repo                  # main checkout, absolute and symlink-resolved
 TAG_SESSION_TYPE=@orchestra-session-type  # worktree (players) | shell | agent (Kirby's terminal tabs)
@@ -16,8 +16,6 @@ TAG_ORCHESTRATOR=@orchestra-orchestrator  # reporting target: codex:<uuid> | tmu
 TAG_AGENT=@orchestra-agent                # claude | codex | gemini | copilot | opencode | custom
 TAG_LAUNCHING=@orchestra-launching        # 1 while the placeholder pane exists; unset once the harness started
 TAG_LAST_REPORT=@orchestra-last-report    # "<KIND> <ISO-8601 UTC>" of the last report a transport accepted
-TAG_UNDELIVERED=@orchestra-undelivered    # "<ISO-8601 UTC> <message>" lines, oldest first, kept under UNDELIVERED_MAX bytes
-UNDELIVERED_MAX=8192                      # tmux rejects command lines around 16 KiB; the value travels on one
 SESSION_TYPE_WORKTREE=worktree            # a session's name is a label; spawner + session-type say whose it is
 nl=$'\n'                                  # assigned once: ANSI-C quoting inside ${x:+...} is not portable
 
@@ -26,9 +24,8 @@ nl=$'\n'                                  # assigned once: ANSI-C quoting inside
 tmux_target() { printf '=%s:' "$1"; }
 
 # tmux sanitizes what it prints unless the client is in UTF-8 mode, which it infers from the names
-# of LC_ALL/LC_CTYPE/LANG: outside a UTF-8 locale every control character (the tabs between
-# listing fields, the newlines separating @orchestra-undelivered entries) comes back as "_" and
-# non-ASCII as "_". `tmux -u` forces UTF-8 output whatever the locale, so every call goes through it.
+# of LC_ALL/LC_CTYPE/LANG: outside a UTF-8 locale control characters (such as the tabs between
+# listing fields) and non-ASCII come back as "_". `tmux -u` forces UTF-8 output whatever the locale, so every call goes through it.
 # tmux_on <socket> <args…>: tmux on one server. An empty socket means the current server (the
 # one $TMUX names, else the default); a path is passed as -S so a process whose tmux environment
 # is redirected (every player pane) still reaches the server that holds its session.
@@ -40,26 +37,6 @@ tmux_on() {
 tag_get()   { tmux_on "$1" show-options -qv -t "$(tmux_target "$2")" "$3" 2>/dev/null || :; }
 tag_set()   { tmux_on "$1" set-option -t "$(tmux_target "$2")" "$3" "$4"; }
 tag_unset() { tmux_on "$1" set-option -u -t "$(tmux_target "$2")" "$3"; }
-
-# Byte length, whatever the locale (tmux's limit is in bytes).
-byte_length() { printf '%s' "$1" | wc -c | tr -d ' '; }
-# record_undelivered <socket> <session> <message>: append "<ISO-8601 UTC> <message>" to
-# @orchestra-undelivered, oldest first. The message is flattened to one line (tabs and newlines
-# become spaces) so the value stays line-parseable; the oldest lines are dropped while the value
-# would reach UNDELIVERED_MAX, and a single oversized line is cut.
-record_undelivered() {
-  local sock="$1" session="$2" line value
-  line="$(date -u +%Y-%m-%dT%H:%M:%SZ) $(printf '%s' "$3" | tr '\n\t' '  ')"
-  value="$(tag_get "$sock" "$session" "$TAG_UNDELIVERED")"
-  value="${value:+$value$nl}$line"
-  while [ "$(byte_length "$value")" -ge "$UNDELIVERED_MAX" ]; do
-    case "$value" in
-      *"$nl"*) value="${value#*"$nl"}";;
-      *) value="$(printf '%s' "$value" | head -c $((UNDELIVERED_MAX - 64))) [cut]"; break;;
-    esac
-  done
-  tag_set "$sock" "$session" "$TAG_UNDELIVERED" "$value"
-}
 
 # player_session_context: the player's own session name and the socket of the server holding it,
 # into player_session and player_socket (lowercase: not environment). spawn.sh injects

@@ -153,7 +153,6 @@ Everything the scripts know about a player is stored on its tmux session as sess
 | `@orchestra-agent` | Harness in the pane: `claude`, `codex`, `gemini`, `copilot`, `opencode` or `custom`. The launcher records what actually started. |
 | `@orchestra-launching` | `1` only while the placeholder pane exists. |
 | `@orchestra-last-report` | `<KIND> <ISO-8601 UTC timestamp>` of the last report a transport accepted. |
-| `@orchestra-undelivered` | Reports no transport accepted: `<ISO-8601 UTC timestamp> <message>` lines, oldest first, kept under 8 KiB. |
 
 The first four tags are the session's identity and are written once, when the session is created; every lookup (spawn, resume, send, adopt, kill, listing) goes through them rather than through the name. The player pane receives `ORCHESTRA_SESSION` (its tmux name), `ORCHESTRA_SOCKET` (the tmux server socket that holds the session), `ORCHESTRA_MODE`, `ORCHESTRA_HARNESS`, `ORCHESTRA_MODEL`, `ORCHESTRA_EFFORT`, `ORCHESTRA_PERMISSION_MODE`, `ORCHESTRA_COMMAND` and `ORCHESTRA_CLAUDE_SKILL`. The orchestrator target is not passed as an environment variable; the player reads the tag.
 
@@ -172,7 +171,7 @@ Players send four kinds of report:
 | `BLOCKED` | Something prevents further progress. |
 | `DONE` | The task is complete, with results and any limitations. |
 
-The reporting script confirms when a transport accepts a message and records `<KIND> <timestamp>` in the session's `@orchestra-last-report` tag. If delivery fails, it returns a nonzero exit code and appends the report to the session's `@orchestra-undelivered` tag; it explicitly says `NOT RECORDED` when even that fails. Recorded reports do not wake the orchestrator; read the tag if a player appears finished but no report arrived.
+The reporting script confirms when a transport accepts a message and records `<KIND> <timestamp>` in the session's `@orchestra-last-report` tag. If delivery fails, it returns a nonzero exit code and prints the destination, failure reason, and complete original report to stderr. The player must surface the failure and quote the report in its response. Nothing retries automatically: a paste may have succeeded before submission failed, so inspect the destination before retrying.
 
 ## Resume or hand off a player
 

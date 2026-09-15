@@ -60,7 +60,6 @@ reach the tmux server; Kirby reads and writes the same names. `sessions.sh` show
 | `@orchestra-agent` | harness in the pane: `claude`, `codex`, `gemini`, `copilot`, `opencode` or `custom` |
 | `@orchestra-launching` | `1` only while the placeholder pane exists |
 | `@orchestra-last-report` | `<KIND> <ISO-8601 UTC>` of the last report a transport accepted |
-| `@orchestra-undelivered` | `<ISO-8601 UTC> <message>` lines, oldest first, for reports no transport accepted |
 
 The first four tags are a session's identity, written once when it is created; the name is
 only a label. The pane environment carries `ORCHESTRA_SESSION` (that label), `ORCHESTRA_SOCKET`
@@ -86,13 +85,11 @@ Only known parent-session markers (`CLAUDECODE`, `CLAUDE_CODE_*` session variabl
 
 Player `report.sh` routes `codex:` via `codex queue` and `tmux:` via `ORCHESTRA_SOCKET`.
 It prints `queued for …` or `sent to …` only when the transport accepted the message, and
-then sets `@orchestra-last-report`. Otherwise it exits nonzero and says either
-`NOT DELIVERED …; recorded on session <name>` (the text is appended to the session's
-`@orchestra-undelivered` tag) or `NOT DELIVERED … and NOT RECORDED` with the text echoed.
-A recorded report does not wake this conversation: read the tag (`sessions.sh --json` shows
-`last_report`; `tmux show-options -qv -t '=SESSION:' @orchestra-undelivered` prints the
-backlog) when a player looks finished but nothing arrived, and inspect before asking for a
-resend to avoid duplicate reports.
+then sets `@orchestra-last-report`. Otherwise it exits nonzero and prints `delivery failed`
+with the destination, reason, and complete original report to stderr for the player to handle.
+If a player looks finished but nothing arrived, inspect its pane with `screen.sh` and ask it
+for the result. Inspect the destination before requesting a resend: a paste may have succeeded
+before submission failed, so another attempt could duplicate the report.
 
 ## Models and effort
 

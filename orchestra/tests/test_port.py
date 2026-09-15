@@ -29,7 +29,7 @@ UUID = '0199a000-1111-7000-8000-000000000042'
 RESTART = 'Your session was restarted in this worktree'
 STAMP = r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ'
 TAGS = ['@orchestra-spawner', '@orchestra-repo', '@orchestra-session-type', '@orchestra-branch', '@orchestra-orchestrator',
-        '@orchestra-agent', '@orchestra-launching', '@orchestra-last-report', '@orchestra-undelivered']
+        '@orchestra-agent', '@orchestra-launching', '@orchestra-last-report']
 # Pinned with Kirby (CLAUDE.md carries the same table): sanitize() and the session labels built
 # from it must agree byte for byte in both implementations.
 SANITIZE = [('feature/x', 'feature-x'), ('release/v1.0:rc1', 'release-v1-0-rc1'), ('a/b_c-d', 'a-b_c-d'), ('plain', 'plain')]
@@ -124,6 +124,7 @@ if c == 'respawn-pane':
     state[n]['dead'] = 0 if os.environ.get('TEST_PANE_ALIVE') else 1; state[n]['status'] = rc; save()
     sys.exit(0)
 if c == 'load-buffer':
+    if os.environ.get('TEST_LOAD_FAIL'): sys.stderr.write('mock tmux: load refused\n'); sys.exit(1)
     data = sys.stdin.buffer.read().decode(); (b/'buffer').write_text(data)
     if data and '-b' in a: buffers[buffer_name()] = data; save()     # tmux silently drops an empty buffer
     sys.exit(0)
@@ -142,6 +143,7 @@ if c == 'paste-buffer':
     if '-d' in a and '-b' in a: buffers.pop(buffer_name(), None); save()
     sys.exit(0)
 if c in ('send-keys', 'capture-pane'):
+    if c == 'send-keys' and os.environ.get('TEST_SEND_KEYS_FAIL'): sys.stderr.write('mock tmux: submission refused\n'); sys.exit(1)
     if '-t' in a: target(a.index('-t')+1)
     sys.exit(0)
 if c in ('list-panes', 'list-sessions', 'ls'):
@@ -485,33 +487,62 @@ class PortTests(unittest.TestCase):
         self.assertTrue(reads); self.assertEqual([c for c in reads if c[0] != '-u'], [])
 
     # --- reporting -------------------------------------------------------------------
-    def test_report_codex_records_last_report_and_undelivered(self):
+    def assert_delivery_failed(self, result, destination, reason, kind, text, session=None):
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('report.sh: delivery failed\nTarget: '+destination+'\nReason: '+reason, result.stderr)
+        self.assertTrue(result.stderr.endswith('Report: [player %s] %s: %s\n' % (session or self.session, kind, text)), result.stderr)
+        self.assertNotIn('queued for', result.stdout); self.assertNotIn('sent to', result.stdout)
+    def test_report_codex_records_success_and_prints_failure(self):
         self.spawn('--agent', 'codex')
         x = self.report('PROGRESS', 'one\ntwo $(touch BAD)')
         self.assertEqual(self.calls()[-1]['args'][:5], ['queue', '--thread', ID, '--message', '[player repo-feature-test] PROGRESS: one\ntwo $(touch BAD)']); self.assertIn('queued for', x.stdout)
-        self.assertRegex(self.last_report(), '^PROGRESS '+STAMP+'$'); self.assertIsNone(self.tag('@orchestra-undelivered'))
-        self.env['TEST_CLI_EXIT'] = '1'; x = self.report('DONE', 'saved', ok=False)
-        self.assertEqual(x.returncode, 1); self.assertIn('NOT DELIVERED', x.stderr); self.assertIn('recorded on session '+self.session, x.stderr)
-        self.assertRegex(self.tag('@orchestra-undelivered'), '^'+STAMP+r' \[player repo-feature-test\] DONE: saved$')
-        self.assertRegex(self.last_report(), '^PROGRESS ')            # refused reports are not "last accepted"
-        self.report('BLOCKED', 'two\nlines\twith tab', ok=False)
-        lines = self.tag('@orchestra-undelivered').split('\n'); self.assertEqual(len(lines), 2)
-        self.assertRegex(lines[1], '^'+STAMP+r' \[player repo-feature-test\] BLOCKED: two lines with tab$')
-        self.assertNotIn('\t', self.tag('@orchestra-undelivered'))
+        self.assertRegex(self.last_report(), '^PROGRESS '+STAMP+'$')
+        before = self.state(); n = len(self.calls())
+        self.env['TEST_CLI_EXIT'] = '1'; text = 'two\nlines\twith tab'
+        x = self.report('BLOCKED', text, ok=False)
+        self.assert_delivery_failed(x, 'codex:'+ID, 'Codex queue refused', 'BLOCKED', text)
+        self.assertEqual(self.state(), before)                       # no session writes after failed delivery
+        self.assertEqual(len(self.calls()), n+1)                    # one attempt, no retry
         self.assert_no_state_files()
-    def test_undelivered_is_bounded_newest_kept(self):
+    def test_failed_report_preserves_complete_large_message(self):
         self.spawn('--agent', 'codex'); self.env['TEST_CLI_EXIT'] = '1'
-        for i in range(4): self.report('PROGRESS', 'msg%d ' % i + 'p'*3000, ok=False)
-        v = self.tag('@orchestra-undelivered'); self.assertLess(len(v.encode()), 8192)
-        self.assertIn('msg3 ', v); self.assertIn('msg2 ', v); self.assertNotIn('msg0 ', v)
-        self.assertTrue(all(re.match(STAMP, line) for line in v.split('\n')))
-        self.report('PROGRESS', 'huge ' + 'h'*9000, ok=False)
-        v = self.tag('@orchestra-undelivered'); self.assertLess(len(v.encode()), 8192); self.assertIn('huge ', v)
-    def test_report_outside_player_pane_is_not_recorded(self):
-        self.spawn('--agent', 'codex'); n = len(self.calls())
+        text = 'Résumé\n'+('h'*20000)+'\t100% $(touch BAD)\nEND\n'
+        before = self.state(); x = self.report('DONE', text, ok=False)
+        self.assert_delivery_failed(x, 'codex:'+ID, 'Codex queue refused', 'DONE', text)
+        self.assertEqual(self.state(), before); self.assertFalse((self.wt/'BAD').exists())
+    def test_report_outside_player_pane_prints_failure(self):
+        self.spawn('--agent', 'codex'); n = len(self.calls()); before = self.state()
         x = self.report('DONE', 'lost text', env=self.env, ok=False)      # no ORCHESTRA_SESSION / ORCHESTRA_SOCKET
-        self.assertEqual(x.returncode, 1); self.assertIn('NOT DELIVERED', x.stderr); self.assertIn('NOT RECORDED', x.stderr); self.assertIn('DONE: lost text', x.stderr)
-        self.assertEqual(len(self.calls()), n); self.assertIsNone(self.tag('@orchestra-undelivered'))
+        self.assert_delivery_failed(x, '<unknown>', 'neither ORCHESTRA_SESSION nor TMUX', 'DONE', 'lost text', session=self.wt.name)
+        self.assertEqual(len(self.calls()), n); self.assertEqual(self.state(), before)
+    def test_invalid_report_target_is_printed_intact(self):
+        self.spawn('--agent', 'codex')
+        self.run_cmd(['tmux', 'set-option', '-t', '='+self.session+':', '@orchestra-orchestrator', 'codex:not-a-thread'])
+        before = self.state(); n = len(self.calls())
+        x = self.report('QUESTION', 'where next?', ok=False)
+        self.assert_delivery_failed(x, 'codex:not-a-thread', 'invalid orchestrator target', 'QUESTION', 'where next?')
+        self.assertEqual(len(self.calls()), n); self.assertEqual(self.state(), before)
+    def test_report_with_missing_session_prints_failure(self):
+        self.spawn('--agent', 'codex'); self.run_cmd(['tmux', 'kill-session', '-t', '='+self.session])
+        x = self.report('DONE', 'session gone', ok=False)
+        self.assert_delivery_failed(x, '<unknown>', 'orchestrator target is unset or unreachable', 'DONE', 'session gone')
+    def test_tmux_load_and_submit_failures_print_report(self):
+        self.env['TEST_PANE_ALIVE'] = '1'
+        self.spawn('--agent', 'claude', '--orchestrator', 'tmux:parent'); self.foreign('parent')
+        before = self.state()
+        for flag, reason in [('TEST_LOAD_FAIL', 'tmux could not load'), ('TEST_SEND_KEYS_FAIL', 'tmux could not submit')]:
+            with self.subTest(flag=flag):
+                self.clear_log(); self.env[flag] = '1'
+                x = self.report('DONE', 'one\ntwo', ok=False)
+                self.assert_delivery_failed(x, 'tmux:parent', reason, 'DONE', 'one\ntwo')
+                self.assertEqual(self.state(), before); self.assertEqual(self.buffers(), {})
+                if flag == 'TEST_SEND_KEYS_FAIL':
+                    self.assertIn('the paste succeeded, inspect before retrying', x.stderr)
+                    self.assertEqual(sum('paste-buffer' in c for c in self.tmux_calls()), 1)
+                    self.assertEqual(sum('send-keys' in c for c in self.tmux_calls()), 1)
+                else:
+                    self.assertNotIn('paste-buffer', self.tmux_log())
+                del self.env[flag]
     def test_report_from_pane_without_orchestra_env_uses_tmux(self):
         self.spawn('--agent', 'codex'); self.rename(self.session, 'label-chosen-elsewhere')     # a pane Kirby started, under whatever label Kirby chose
         inside = dict(self.env, TMUX='/tmp/custom-socket,7,0', TEST_TMUX_SESSION='label-chosen-elsewhere')
@@ -521,7 +552,7 @@ class PortTests(unittest.TestCase):
         self.assertRegex(self.tag('@orchestra-last-report', 'label-chosen-elsewhere'), '^PROGRESS '+STAMP+'$'); self.assertIn('"-S", "/tmp/custom-socket", "set-option"', self.tmux_log())
         self.assertIn('["-u", "-S", "/tmp/custom-socket", "display-message"', self.tmux_log())        # the session lookup goes through tmux_on too
         x = self.report('DONE', 'derived fail', env=dict(inside, TEST_CLI_EXIT='1'), ok=False)
-        self.assertIn('recorded on session label-chosen-elsewhere', x.stderr); self.assertIn('DONE: derived fail', self.tag('@orchestra-undelivered', 'label-chosen-elsewhere'))
+        self.assert_delivery_failed(x, 'codex:'+ID, 'Codex queue refused', 'DONE', 'derived fail', session='label-chosen-elsewhere')
     def test_help_text_is_the_whole_header_comment(self):
         # Usage output is exactly the run of "#" lines from line 2 to the first non-comment line: no
         # code line printed, no header line dropped.
@@ -555,26 +586,26 @@ class PortTests(unittest.TestCase):
         self.assertRegex(self.last_report(), '^PROGRESS '+STAMP+'$')
         self.run_cmd(['tmux', 'kill-session', '-t', '=parent'])
         x = self.report('DONE', 'gone', env=self.player_env(ORCHESTRA_SOCKET='/tmp/custom-socket'), ok=False)
-        self.assertIn('is gone', x.stderr); self.assertIn('DONE: gone', self.tag('@orchestra-undelivered'))
+        self.assert_delivery_failed(x, 'tmux:parent', 'orchestrator session parent is gone', 'DONE', 'gone')
     def test_failed_paste_leaves_no_buffer(self):
         self.env['TEST_PANE_ALIVE'] = '1'; self.spawn('--agent', 'claude', '--orchestrator', 'tmux:parent'); self.foreign('parent')
         self.env['TEST_PASTE_FAIL'] = '1'
         x = self.orch('send.sh', self.session, 'hello', ok=False); self.assertNotEqual(x.returncode, 0); self.assertEqual(self.buffers(), {})
-        x = self.report('DONE', 'lost', ok=False); self.assertIn('NOT DELIVERED', x.stderr); self.assertEqual(self.buffers(), {})
-        # paste and the cleanup both fail (server gone in between): the outcome must still be reported and recorded
+        x = self.report('DONE', 'lost', ok=False); self.assertIn('report.sh: delivery failed', x.stderr); self.assertEqual(self.buffers(), {})
+        # paste and the cleanup both fail (server gone in between): the full error must still reach the player
         self.env['TEST_DELETE_FAIL'] = '1'
         x = self.report('DONE', 'doubly lost', ok=False); self.assertEqual(x.returncode, 1)
-        self.assertIn('NOT DELIVERED', x.stderr); self.assertIn('recorded on session '+self.session, x.stderr); self.assertIn('DONE: doubly lost', self.tag('@orchestra-undelivered'))
+        self.assert_delivery_failed(x, 'tmux:parent', 'tmux could not paste', 'DONE', 'doubly lost')
         x = self.orch('send.sh', self.session, 'hello', ok=False); self.assertNotEqual(x.returncode, 0); self.assertIn('could not paste', x.stderr)
-    def test_shell_owned_parent_falls_back(self):
+    def test_shell_owned_parent_prints_failure(self):
         self.spawn('--agent', 'claude', '--orchestrator', 'tmux:parent'); self.foreign('parent')
         self.env['TEST_PANE_COMMAND'] = 'bash'; x = self.report('QUESTION', 'decision', ok=False)
         self.assertNotEqual(x.returncode, 0); self.assertNotIn('paste-buffer', self.tmux_log()); self.assertIn('a shell owns', x.stderr)
-        self.assertIn('QUESTION: decision', self.tag('@orchestra-undelivered'))
+        self.assert_delivery_failed(x, 'tmux:parent', 'a shell owns', 'QUESTION', 'decision')
     def test_no_parent_never_uses_player_id(self):
         self.spawn('--agent', 'claude'); self.drop_tag('@orchestra-orchestrator'); n = len(self.calls())
         x = self.report('DONE', 'no parent', ok=False); self.assertNotEqual(x.returncode, 0); self.assertEqual(len(self.calls()), n)
-        self.assertIn('not set', x.stderr); self.assertIn('DONE: no parent', self.tag('@orchestra-undelivered'))
+        self.assert_delivery_failed(x, '<unknown>', 'orchestrator target is unset or unreachable', 'DONE', 'no parent')
 
     # --- routing, adoption, listing, exact targeting -----------------------------------------
     def test_detection(self):

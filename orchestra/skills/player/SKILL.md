@@ -64,8 +64,9 @@ with one DONE or BLOCKED report. Handoffs may legitimately resend the terminal r
 
 `report.sh` prints `queued for …` or `sent to …` only when the transport accepted the
 message; it then records `<KIND> <timestamp>` in your session's `@orchestra-last-report`
-tag. On failure it exits nonzero and says `NOT DELIVERED …; recorded on session <name>`
-(the message is appended to the session's `@orchestra-undelivered` tag, where the
-orchestrator can read it) or `NOT DELIVERED … and NOT RECORDED` with the text echoed.
-Then the orchestrator has not seen it: state that plainly in your final output, quote the
-text, and do not retry blindly (a duplicate report is worse than a late one).
+tag. On failure it exits nonzero and prints `report.sh: delivery failed`, the destination
+(or `<unknown>` if it cannot be read), the reason, and the complete original report to stderr.
+Surface the delivery failure in your response and quote the full report so the result remains
+visible in your conversation. Inspect the destination before retrying: a paste may have
+succeeded before submission failed, so another attempt could duplicate the report. Do not
+claim that the orchestrator received a report when delivery failed.
