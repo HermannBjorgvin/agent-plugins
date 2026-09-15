@@ -51,7 +51,8 @@ user sessions; `report.sh` reaches the real server through `ORCHESTRA_SOCKET`. `
 is the sanctioned reporting route; do not bypass isolation.
 Messages prefixed `[orchestrator]` relay the orchestrator's guidance under the user's task.
 
-`report.sh KIND "text"` sends `[player NAME] KIND: text`:
+`report.sh KIND "text"` sends `[player SESSION] KIND: text`, where SESSION is your tmux
+session name (a label; the orchestrator resolves it through the tags):
 - PROGRESS: meaningful milestones only.
 - QUESTION: collect unresolved user decisions together, with suggested defaults.
 - BLOCKED: explain what prevents progress and what would unblock it.

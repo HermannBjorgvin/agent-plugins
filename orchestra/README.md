@@ -123,7 +123,7 @@ The orchestrator uses the scripts in `skills/orchestrator/scripts/`. All accept 
 
 | Command | Purpose |
 | --- | --- |
-| `sessions.sh --all` | List players across repositories with their agent, reporting target and last report. Add `--json` for structured output or `--sample N` to compare activity over time. |
+| `sessions.sh --all` | List players across repositories with their session name, branch, agent, reporting target and last report; without `--all`, the players tagged for the current or `--repo` repository. Add `--json` for structured output or `--sample N` to compare activity over time. |
 | `spawn.sh --branch B --prompt "Task"` | Create a worktree and tmux session, then start a player. Also accepts `--prompt-file FILE`. |
 | `screen.sh SESSION --history 200` | Read a player's pane. `--lines N` limits the visible output. |
 | `send.sh SESSION "Message"` | Send guidance. Use `--raw` for menus, `--key` for a keypress, or `--type` to type text. |
@@ -133,7 +133,9 @@ The orchestrator uses the scripts in `skills/orchestrator/scripts/`. All accept 
 
 New branches start from the freshly fetched default branch. Use `--from REF` to choose another starting point, or `--dry-run` to preview a spawn without writes or fetching.
 
-Worktrees live under the main checkout's `.claude/worktrees/` directory. Session names use `kirby-<repo path hash>-<branch>`, with branch separators normalized for tmux. These conventions match [Kirby](https://github.com/HermannBjorgvin/Kirby). Session targeting is exact, so a short name cannot select a different player by prefix.
+`SESSION` in these commands is either the player's branch (`feature/search`, resolved in the current or `--repo` repository, or uniquely across repositories when run outside one) or the exact tmux session name that `sessions.sh` and `spawn.sh` print. Nothing matches by prefix.
+
+Worktrees live under the main checkout's `.claude/worktrees/` directory. A session's tmux name is a label built from the repository directory and the branch (`agent-plugins-feature-search` for branch `feature/search` in a checkout named `agent-plugins`; `/`, `.` and `:` become `-`); when any session already has that name, `-2`, `-3`, … is appended. The label is chosen once and never parsed: the scripts find a player through its session tags, so a session that merely has such a name is never touched. These conventions match [Kirby](https://github.com/HermannBjorgvin/Kirby).
 
 Both prompt options load the task into a tmux paste buffer named `orchestra-prompt-<session>` on the same server; the launcher inside the pane reads and deletes it. Task text therefore does not consume tmux's roughly 16 KiB command allowance and is never written into the repository. If a new launch fails, its placeholder session is removed and the worktree is kept for a retry.
 
@@ -145,6 +147,7 @@ Everything the scripts know about a player is stored on its tmux session as sess
 | --- | --- |
 | `@orchestra-spawner` | `orchestra` or `kirby`: which program created the session. |
 | `@orchestra-repo` | Absolute, symlink-resolved path of the main checkout. |
+| `@orchestra-session-type` | `worktree` for every player. Kirby's terminal tabs carry `shell` or `agent` and are never treated as players. |
 | `@orchestra-branch` | The branch the session was spawned under, unsanitized (`feature/x`). |
 | `@orchestra-orchestrator` | Reporting target: `codex:<thread-id>` or `tmux:<session>`. Set by `spawn.sh`, replaced by `adopt.sh`. |
 | `@orchestra-agent` | Harness in the pane: `claude`, `codex`, `gemini`, `copilot`, `opencode` or `custom`. The launcher records what actually started. |
@@ -152,11 +155,11 @@ Everything the scripts know about a player is stored on its tmux session as sess
 | `@orchestra-last-report` | `<KIND> <ISO-8601 UTC timestamp>` of the last report a transport accepted. |
 | `@orchestra-undelivered` | Reports no transport accepted: `<ISO-8601 UTC timestamp> <message>` lines, oldest first, kept under 8 KiB. |
 
-The player pane receives `ORCHESTRA_SESSION`, `ORCHESTRA_SOCKET` (the tmux server socket that holds the session), `ORCHESTRA_PLAYER`, `ORCHESTRA_MODE`, `ORCHESTRA_HARNESS`, `ORCHESTRA_MODEL`, `ORCHESTRA_EFFORT`, `ORCHESTRA_PERMISSION_MODE`, `ORCHESTRA_COMMAND` and `ORCHESTRA_CLAUDE_SKILL`. The orchestrator target is not passed as an environment variable; the player reads the tag.
+The first four tags are the session's identity and are written once, when the session is created; every lookup (spawn, resume, send, adopt, kill, listing) goes through them rather than through the name. The player pane receives `ORCHESTRA_SESSION` (its tmux name), `ORCHESTRA_SOCKET` (the tmux server socket that holds the session), `ORCHESTRA_MODE`, `ORCHESTRA_HARNESS`, `ORCHESTRA_MODEL`, `ORCHESTRA_EFFORT`, `ORCHESTRA_PERMISSION_MODE`, `ORCHESTRA_COMMAND` and `ORCHESTRA_CLAUDE_SKILL`. The orchestrator target is not passed as an environment variable; the player reads the tag.
 
 ## Reporting
 
-Each player session carries one reporting target in its `@orchestra-orchestrator` tag. Spawning or adopting a player sets it; the player cannot change it, and `report.sh --orchestrator` only prints it.
+Each player session carries one reporting target in its `@orchestra-orchestrator` tag. Spawning or adopting a player sets it; the player cannot change it, and `report.sh --orchestrator` only prints it. Reports arrive as `[player SESSION] KIND: text`, where `SESSION` is the player's tmux session name.
 
 Reports go to either a Codex conversation through `codex queue` or a Claude orchestrator's tmux pane, reached through `ORCHESTRA_SOCKET`. An explicit `--orchestrator codex:<thread-id>` or `--orchestrator tmux:<session>` selects the target when spawning or adopting. Otherwise, the scripts detect the orchestrator from the current session. A player's own Codex ID is never used as its parent target.
 
@@ -194,7 +197,7 @@ The launcher unsets `TMUX` and redirects `TMUX_TMPDIR` to a scratch directory to
 
 Known limitations:
 
-- Sessions created by earlier versions of these scripts, which kept state in files, are not recognised.
+- Sessions created by earlier versions of these scripts, which kept state in files and named sessions after a hash of the repository path, are not recognised.
 - The test suites use fake agent CLIs. They do not verify live model sessions or delivery from a real player through `codex queue`.
 - Codex resume finds conversations by the worktree path in rollout files; paths requiring JSON escaping do not match.
 - OpenCode resume is untested. Gemini and Copilot resume are unsupported.

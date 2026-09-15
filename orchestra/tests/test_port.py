@@ -375,19 +375,19 @@ class PortTests(unittest.TestCase):
         self.env['TEST_PANE_ALIVE'] = '1'; self.spawn('--agent', 'codex')
         repo2 = self.base/'other/repo'; self.git_init(repo2); self.spawn('--agent', 'codex', repo=repo2)
         self.foreign('stray'); self.foreign('repo-shell', {'@orchestra-spawner': 'kirby', '@orchestra-repo': str(self.repo.resolve()), '@orchestra-session-type': 'shell'})
-        self.foreign('kirby-made', self.player_tags(branch='feature/other'))
+        self.foreign('tab-made-elsewhere', self.player_tags(branch='feature/other'))
         names = lambda rows: sorted(r['session'] for r in rows)
-        self.assertEqual(names(self.sessions('--repo', str(self.repo))), ['kirby-made', self.session])
-        self.assertEqual(names(self.sessions()), ['kirby-made', self.session])                          # cwd's repo
+        self.assertEqual(names(self.sessions('--repo', str(self.repo))), sorted([self.session, 'tab-made-elsewhere']))
+        self.assertEqual(names(self.sessions()), sorted([self.session, 'tab-made-elsewhere']))                    # cwd's repo
         self.assertEqual(names(self.sessions('--repo', str(repo2))), [self.session+'-2'])
-        self.assertEqual(names(self.sessions('--all')), ['kirby-made', self.session, self.session+'-2'])
-        self.assertEqual(names(json.loads(self.orch('sessions.sh', '--json', cwd=self.base).stdout)), ['kirby-made', self.session, self.session+'-2'])   # outside a repo: everything
+        self.assertEqual(names(self.sessions('--all')), sorted([self.session, self.session+'-2', 'tab-made-elsewhere']))
+        self.assertEqual(names(json.loads(self.orch('sessions.sh', '--json', cwd=self.base).stdout)), sorted([self.session, self.session+'-2', 'tab-made-elsewhere']))   # outside a repo: everything
         text = self.orch('sessions.sh', '--all').stdout.splitlines()
         self.assertEqual(text[0].split(), ['STATE', 'QUIET', 'REPO', 'SESSION', 'BRANCH', 'AGENT', 'ORCHESTRATOR', 'LAST-REPORT', 'TITLE'])
         self.assertTrue(any(self.session+'-2' in l and 'feature/test' in l for l in text[1:]), text); self.assertNotIn('stray', '\n'.join(text)); self.assertNotIn('repo-shell', '\n'.join(text))
         text = self.orch('sessions.sh', '--repo', str(self.repo)).stdout.splitlines()
         self.assertEqual(text[0].split(), ['STATE', 'QUIET', 'SESSION', 'BRANCH', 'AGENT', 'ORCHESTRATOR', 'LAST-REPORT', 'TITLE'])
-        self.assertTrue(any(l.split()[2:4] == ['kirby-made', 'feature/other'] for l in text[1:]), text)
+        self.assertTrue(any(l.split()[2:4] == ['tab-made-elsewhere', 'feature/other'] for l in text[1:]), text)
 
     # --- resume ----------------------------------------------------------------------
     def test_resume_default_restart_note_only_no_replay_no_overrides(self):
@@ -466,14 +466,14 @@ class PortTests(unittest.TestCase):
         self.assertEqual(x.returncode, 1); self.assertIn('NOT DELIVERED', x.stderr); self.assertIn('NOT RECORDED', x.stderr); self.assertIn('DONE: lost text', x.stderr)
         self.assertEqual(len(self.calls()), n); self.assertIsNone(self.tag('@orchestra-undelivered'))
     def test_report_from_pane_without_orchestra_env_uses_tmux(self):
-        self.spawn('--agent', 'codex'); self.rename(self.session, 'kirby-chose-this')     # a pane Kirby started, under whatever label Kirby chose
-        inside = dict(self.env, TMUX='/tmp/custom-socket,7,0', TEST_TMUX_SESSION='kirby-chose-this')
+        self.spawn('--agent', 'codex'); self.rename(self.session, 'label-chosen-elsewhere')     # a pane Kirby started, under whatever label Kirby chose
+        inside = dict(self.env, TMUX='/tmp/custom-socket,7,0', TEST_TMUX_SESSION='label-chosen-elsewhere')
         self.assertEqual(self.report('--orchestrator', env=inside).stdout.strip(), 'codex:'+ID)
         self.clear_log(); x = self.report('PROGRESS', 'derived', env=inside); self.assertIn('queued for', x.stdout)
-        self.assertEqual(self.calls()[-1]['args'][:5], ['queue', '--thread', ID, '--message', '[player kirby-chose-this] PROGRESS: derived'])
-        self.assertRegex(self.tag('@orchestra-last-report', 'kirby-chose-this'), '^PROGRESS '+STAMP+'$'); self.assertIn('"-S", "/tmp/custom-socket", "set-option"', self.tmux_log())
+        self.assertEqual(self.calls()[-1]['args'][:5], ['queue', '--thread', ID, '--message', '[player label-chosen-elsewhere] PROGRESS: derived'])
+        self.assertRegex(self.tag('@orchestra-last-report', 'label-chosen-elsewhere'), '^PROGRESS '+STAMP+'$'); self.assertIn('"-S", "/tmp/custom-socket", "set-option"', self.tmux_log())
         x = self.report('DONE', 'derived fail', env=dict(inside, TEST_CLI_EXIT='1'), ok=False)
-        self.assertIn('recorded on session kirby-chose-this', x.stderr); self.assertIn('DONE: derived fail', self.tag('@orchestra-undelivered', 'kirby-chose-this'))
+        self.assertIn('recorded on session label-chosen-elsewhere', x.stderr); self.assertIn('DONE: derived fail', self.tag('@orchestra-undelivered', 'label-chosen-elsewhere'))
     def test_help_text_is_comment_only(self):
         x = self.orch('spawn.sh', '--help'); self.assertIn('Usage: spawn.sh', x.stdout)
         self.assertFalse([l for l in x.stdout.splitlines() if l.startswith(('.', 'set ', 'AGENT='))], x.stdout[-200:])
